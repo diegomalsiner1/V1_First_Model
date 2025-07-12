@@ -49,7 +49,7 @@ def load_data():
     grid_sell_price = np.full(n_steps, 0.08)
     for i, t in enumerate(time_steps):
         if 17 <= t <= 21:
-            grid_buy_price[i] = 0.20
+            grid_buy_price[i] = pi_consumer
 
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,

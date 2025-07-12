@@ -13,13 +13,13 @@ time_indices = range(n_steps)
 
 def load_data():
     # Load LCOE for PV from PV_LCOE.csv
-    # Updated to use absolute path
-    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv')
+    # Updated to use absolute path and ignore comment lines
+    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv', comment='#')
     lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]  # 0.055 EUR/kWh
 
     # Load LCOE for BESS from BESS_LCOE.csv
-    # Updated to use absolute path
-    bess_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/BESS_LCOE.csv')
+    # Updated to use absolute path and ignore comment lines
+    bess_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/BESS_LCOE.csv', comment='#')
     lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]  # 0.08 EUR/kWh
 
     # Load constants from Constants_Plant.csv
@@ -207,3 +207,4 @@ if LpStatus[prob.status] == "Optimal":
     # plt.show()  # Uncomment if you want to display during execution
 else:
     print("Optimization did not converge to an optimal solution.")
+

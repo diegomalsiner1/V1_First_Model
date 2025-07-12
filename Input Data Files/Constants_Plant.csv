@@ -1,4 +1,4 @@
-Parameter,Value #To initialize, sample numbers
+Parameter,Value #To initialize
 BESS_Capacity,4000
 BESS_Power_Limit,92
 BESS_Efficiency_Charge,0.984

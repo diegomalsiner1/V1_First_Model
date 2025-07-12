@@ -127,7 +127,7 @@ for t in range(n_steps + 1):
 prob += (lpSum([consumer_demand[t] * pi_consumer * delta_t for t in time_indices]) +
           lpSum([(P_PV_grid[t] + P_BESS_grid[t]) * grid_sell_price[t] * delta_t for t in time_indices]) -
           lpSum([(P_grid_consumer[t] + P_grid_BESS[t]) * grid_buy_price[t] * delta_t for t in time_indices]) -
-          lpSum([pv_power[t] * lcoe_pv * delta_t for t in time_indices]) -
+          #lpSum([pv_power[t] * lcoe_pv * delta_t for t in time_indices]) - DOES IT MAKE SENSE TO CONSIDER THIS AS A COST
           lpSum([(P_BESS_consumer[t] + P_BESS_grid[t]) * lcoe_bess * delta_t for t in time_indices]))
 
 # Solve the problem

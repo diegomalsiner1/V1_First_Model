@@ -1,5 +1,5 @@
 Parameter,Value
-BESS_Capacity,6000
+BESS_Capacity,4000
 BESS_Power_Limit,300
 BESS_Efficiency_Charge,0.984
 BESS_Efficiency_Discharge,0.984

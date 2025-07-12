@@ -36,10 +36,10 @@ def load_data():
     pv_power = np.zeros(n_steps)
     for i, t in enumerate(time_steps):
         if 5 <= t <= 19:
-            pv_power[i] = 1327 * np.sin(np.pi * (t - 6) / 12)
+            pv_power[i] = 200 * np.sin(np.pi * (t - 6) / 12)
 
     # Sample consumer demand (kW): constant load of 200 kW with 500 kW step from 8 AM to 6 PM
-    consumer_demand = np.full(n_steps, 200.0)  # Baseline constant load of 200 kWh
+    consumer_demand = np.full(n_steps, 100.0)  # Baseline constant load of 200 kWh
     for i, t in enumerate(time_steps):
         if 8 <= t <= 18:  # 8:00 to 18:00
             consumer_demand[i] += 100.0  # Add 500 kW step

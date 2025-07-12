@@ -23,8 +23,8 @@ def load_data():
     bess_lcoe_data = pd.read_csv('../Input Data Files/BESS_LCOE.csv', comment='#')
     lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]  # 0.08 EUR/kWh
 
-    # Load constants from Constants_Plant.csv
-    constants_data = pd.read_csv('../Input Data Files/Constants_Plant.csv')
+    # Load constants from Constants_Plant.csv, ignoring comment lines
+    constants_data = pd.read_csv('../Input Data Files/Constants_Plant.csv', comment='#')
     bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])  # 4000 kWh
     bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])  # 92 kW
     eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])  # 0.984
@@ -54,6 +54,7 @@ def load_data():
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
             eta_charge, eta_discharge, soc_initial, pi_consumer)
+    
 # Load data
 (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
  lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,

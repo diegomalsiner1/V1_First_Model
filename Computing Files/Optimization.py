@@ -3,6 +3,10 @@ import numpy as np
 from pulp import LpProblem, LpVariable, lpSum, LpMaximize, LpStatus
 import matplotlib.pyplot as plt
 
+
+print("--- Running the REAL Optimization Script ---") # Add this line
+
+
 # Time framework: 24 hours, 15-minute intervals (96 steps)
 time_steps = np.arange(0, 24, 0.25)
 n_steps = len(time_steps)

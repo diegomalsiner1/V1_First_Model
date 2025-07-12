@@ -13,15 +13,18 @@ time_indices = range(n_steps)
 
 def load_data():
     # Load LCOE for PV from PV_LCOE.csv
-    pv_lcoe_data = pd.read_csv('../Input Data Files/PV_LCOE.csv')
+    # Updated to use absolute path
+    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv')
     lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]  # 0.055 EUR/kWh
 
     # Load LCOE for BESS from BESS_LCOE.csv
-    bess_lcoe_data = pd.read_csv('../Input Data Files/BESS_LCOE.csv')
+    # Updated to use absolute path
+    bess_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/BESS_LCOE.csv')
     lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]  # 0.08 EUR/kWh
 
     # Load constants from Constants_Plant.csv
-    constants_data = pd.read_csv('../Input Data Files/Constants_Plant.csv')
+    # Updated to use absolute path
+    constants_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/Constants_Plant.csv')
     bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])  # 4000 kWh
     bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])  # 92 kW
     eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])  # 0.984
@@ -89,14 +92,14 @@ for t in time_indices:
 prob += SOC[0] == soc_initial  # Initial SOC
 for t in range(n_steps):
     prob += SOC[t + 1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t - \
-            (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t
+                        (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t
 
 # Objective function: Maximize revenue
 prob += (lpSum([consumer_demand[t] * pi_consumer * delta_t for t in time_indices]) +
-         lpSum([(P_PV_grid[t] + P_BESS_grid[t]) * grid_sell_price[t] * delta_t for t in time_indices]) -
-         lpSum([(P_grid_consumer[t] + P_grid_BESS[t]) * grid_buy_price[t] * delta_t for t in time_indices]) -
-         lpSum([pv_power[t] * lcoe_pv * delta_t for t in time_indices]) -
-         lpSum([(P_BESS_consumer[t] + P_BESS_grid[t]) * lcoe_bess * delta_t for t in time_indices]))
+          lpSum([(P_PV_grid[t] + P_BESS_grid[t]) * grid_sell_price[t] * delta_t for t in time_indices]) -
+          lpSum([(P_grid_consumer[t] + P_grid_BESS[t]) * grid_buy_price[t] * delta_t for t in time_indices]) -
+          lpSum([pv_power[t] * lcoe_pv * delta_t for t in time_indices]) -
+          lpSum([(P_BESS_consumer[t] + P_BESS_grid[t]) * lcoe_bess * delta_t for t in time_indices]))
 
 # Solve the problem
 prob.solve()

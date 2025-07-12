@@ -16,11 +16,14 @@ def load_data():
     # Sample PV power profile (kW): sinusoidal daytime generation
     pv_power = np.zeros(n_steps)
     for i, t in enumerate(time_steps):
-        if 6 <= t <= 18:
-            pv_power[i] = 100 * np.sin(np.pi * (t - 6) / 12)
+        if 5 <= t <= 19:
+            pv_power[i] = 2327 * np.sin(np.pi * (t - 6) / 12)
 
-    # Sample consumer demand (kW): constant
-    consumer_demand = np.full(n_steps, 50.0)
+    # Sample consumer demand (kW): constant load of 200 kW with 500 kW step from 8 AM to 6 PM
+    consumer_demand = np.full(n_steps, 200.0)  # Baseline constant load of 200 kW
+        for i, t in enumerate(time_steps):
+        if 8 <= t <= 18:  # 8:00 to 18:00
+            consumer_demand[i] += 300.0  # Add 500 kW step
 
     # Sample grid prices ($/kWh): higher buy price during peak hours
     grid_buy_price = np.full(n_steps, 0.15)

@@ -13,15 +13,15 @@ time_indices = range(n_steps)
 
 def load_data():
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
-    pv_lcoe_data = pd.read_csv('../Input Data Files/PV_LCOE.csv', comment='#')
+    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv', comment='#')
     lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]  # 0.055 EUR/kWh
 
     # Load LCOE for BESS from BESS_LCOE.csv, ignoring comment lines
-    bess_lcoe_data = pd.read_csv('../Input Data Files/BESS_LCOE.csv', comment='#')
+    bess_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/BESS_LCOE.csv', comment='#')
     lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]  # 0.08 EUR/kWh
 
     # Load constants from Constants_Plant.csv
-    constants_data = pd.read_csv('../Input Data Files/Constants_Plant.csv')
+    constants_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/Constants_Plant.csv')
     bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])  # 4000 kWh
     bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])  # 92 kW
     eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])  # 0.984

@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from pulp import LpProblem, LpVariable, lpSum, LpMaximize, LpStatus
 import matplotlib.pyplot as plt
+import os
 
 print("--- Running the REAL Optimization Script ---")
 
@@ -10,27 +11,26 @@ time_steps = np.arange(0, 24, 0.25)
 n_steps = len(time_steps)
 delta_t = 0.25  # hours
 time_indices = range(n_steps)
+M = 1e6  # A large constant for Big-M method, ensure it's larger than any possible power flow
 
 def load_data():
-    # Debug: Print file content
-    with open('../Input Data Files/Constants_Plant.csv', 'r') as file:
-        print("Constants_Plant.csv content:", file.read())
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
-    pv_lcoe_data = pd.read_csv('../Input Data Files/PV_LCOE.csv', comment='#')
-    lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]  # 0.055 EUR/kWh
+    # Using absolute paths
+    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv', comment='#')
+    lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]
 
     # Load LCOE for BESS from BESS_LCOE.csv, ignoring comment lines
-    bess_lcoe_data = pd.read_csv('../Input Data Files/BESS_LCOE.csv', comment='#')
-    lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]  # 0.08 EUR/kWh
+    bess_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/BESS_LCOE.csv', comment='#')
+    lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]
 
     # Load constants from Constants_Plant.csv, ignoring comment lines
-    constants_data = pd.read_csv('../Input Data Files/Constants_Plant.csv', comment='#')
-    bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])  # 4000 kWh
-    bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])  # 92 kW
-    eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])  # 0.984
-    eta_discharge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Discharge']['Value'].iloc[0])  # 0.984
-    soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])  # 2000 kWh
-    pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])  # 0.12 EUR/kWh
+    constants_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/Constants_Plant.csv', comment='#')
+    bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])
+    bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])
+    eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])
+    eta_discharge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Discharge']['Value'].iloc[0])
+    soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])
+    pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])
 
     # Sample PV power profile (kW): sinusoidal daytime generation
     pv_power = np.zeros(n_steps)
@@ -38,19 +38,17 @@ def load_data():
         if 5 <= t <= 19:
             pv_power[i] = 100 * np.sin(np.pi * (t - 6) / 12)
 
-    # Sample consumer demand (kW): constant load of 200 kW with 500 kW step from 8 AM to 6 PM
-    consumer_demand = np.full(n_steps, 50.0)  # Baseline constant load of 200 kWh
+    # Sample consumer demand (kW): constant load of 50 kW with 50 kW step from 8 AM to 6 PM
+    consumer_demand = np.full(n_steps, 50.0)
     for i, t in enumerate(time_steps):
-        if 8 <= t <= 18:  # 8:00 to 18:00
-            consumer_demand[i] += 50.0  # Add 500 kW step
+        if 8 <= t <= 18:
+            consumer_demand[i] += 50.0
 
-    # Sample grid prices ($/kWh): higher buy price during peak hours
+    # Sample grid prices ($/kWh): constant at 0.12
     grid_buy_price = np.full(n_steps, 0.12)
     grid_sell_price = np.full(n_steps, 0.12)
-    for i, t in enumerate(time_steps):
-        if 17 <= t <= 21:
-            grid_buy_price[i] = 0.12
-
+    # No peak pricing as per your last input
+    
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
             eta_charge, eta_discharge, soc_initial, pi_consumer)
@@ -73,25 +71,57 @@ P_grid_consumer = LpVariable.dicts("P_grid_consumer", time_indices, lowBound=0)
 P_grid_BESS = LpVariable.dicts("P_grid_BESS", time_indices, lowBound=0)
 SOC = LpVariable.dicts("SOC", range(n_steps + 1), lowBound=0, upBound=bess_capacity)
 
+# Binary variables for mutual exclusivity
+b_charge = LpVariable.dicts("b_charge", time_indices, cat='Binary')
+b_discharge = LpVariable.dicts("b_discharge", time_indices, cat='Binary')
+b_grid_buy = LpVariable.dicts("b_grid_buy", time_indices, cat='Binary')
+b_grid_sell = LpVariable.dicts("b_grid_sell", time_indices, cat='Binary')
+
+
 # Constraints
 # 1. Consumer energy balance
 for t in time_indices:
-    prob += P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand[t]
+    prob += P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand[t], f"Consumer_Balance_{t}"
 
 # 2. PV power allocation
 for t in time_indices:
-    prob += P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t]
+    prob += P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t], f"PV_Allocation_{t}"
 
-# 3. BESS power limits
+# 3. BESS power limits and mutual exclusivity (Big-M method)
 for t in time_indices:
-    prob += P_PV_BESS[t] + P_grid_BESS[t] <= bess_power_limit  # Charging limit
-    prob += P_BESS_consumer[t] + P_BESS_grid[t] <= bess_power_limit  # Discharging limit
+    # Total power into BESS
+    prob += P_PV_BESS[t] + P_grid_BESS[t] <= bess_power_limit, f"BESS_Charge_Limit_{t}"
+    prob += P_PV_BESS[t] + P_grid_BESS[t] <= M * b_charge[t], f"BESS_Charge_Binary_Link_{t}"
 
-# 4. BESS SOC dynamics
-prob += SOC[0] == soc_initial  # Initial SOC
+    # Total power out of BESS
+    prob += P_BESS_consumer[t] + P_BESS_grid[t] <= bess_power_limit, f"BESS_Discharge_Limit_{t}"
+    prob += P_BESS_consumer[t] + P_BESS_grid[t] <= M * b_discharge[t], f"BESS_Discharge_Binary_Link_{t}"
+
+    # Mutual exclusivity: cannot charge and discharge simultaneously
+    prob += b_charge[t] + b_discharge[t] <= 1, f"BESS_Mutual_Exclusivity_{t}"
+
+# 4. Grid power limits and mutual exclusivity (Big-M method)
+for t in time_indices:
+    # Power sold to grid
+    prob += P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t], f"Grid_Sell_Binary_Link_{t}"
+    
+    # Power bought from grid
+    prob += P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t], f"Grid_Buy_Binary_Link_{t}"
+
+    # Mutual exclusivity: cannot buy and sell from grid simultaneously
+    prob += b_grid_buy[t] + b_grid_sell[t] <= 1, f"Grid_Mutual_Exclusivity_{t}"
+
+
+# 5. BESS SOC dynamics
+prob += SOC[0] == soc_initial, "Initial_SOC" # Initial SOC
 for t in range(n_steps):
     prob += SOC[t + 1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t - \
-                        (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t
+                        (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t, f"SOC_Dynamics_{t}"
+
+# 6. SOC bounds
+for t in range(n_steps + 1):
+    prob += SOC[t] >= 0, f"SOC_Lower_Bound_{t}"
+    prob += SOC[t] <= bess_capacity, f"SOC_Upper_Bound_{t}"
 
 # Objective function: Maximize revenue
 prob += (lpSum([consumer_demand[t] * pi_consumer * delta_t for t in time_indices]) +
@@ -101,6 +131,7 @@ prob += (lpSum([consumer_demand[t] * pi_consumer * delta_t for t in time_indices
           lpSum([(P_BESS_consumer[t] + P_BESS_grid[t]) * lcoe_bess * delta_t for t in time_indices]))
 
 # Solve the problem
+# PuLP will automatically choose a suitable solver (like CBC or GLPK if installed)
 prob.solve()
 
 # Output results
@@ -117,11 +148,11 @@ if LpStatus[prob.status] == "Optimal":
     P_grid_BESS_vals = [P_grid_BESS[t].varValue for t in time_indices]
     SOC_vals = [SOC[t].varValue for t in range(n_steps + 1)]
 
-    # Compute BESS charge and discharge powers
+    # Compute BESS charge and discharge powers (now consistent with binary constraints)
     P_BESS_charge = [P_PV_BESS_vals[t] + P_grid_BESS_vals[t] for t in time_indices]
     P_BESS_discharge = [P_BESS_consumer_vals[t] + P_BESS_grid_vals[t] for t in time_indices]
 
-    # Compute Grid sold and bought powers
+    # Compute Grid sold and bought powers (now consistent with binary constraints)
     P_grid_sold = [P_PV_grid_vals[t] + P_BESS_grid_vals[t] for t in time_indices]
     P_grid_bought = [P_grid_consumer_vals[t] + P_grid_BESS_vals[t] for t in time_indices]
 
@@ -129,8 +160,8 @@ if LpStatus[prob.status] == "Optimal":
     revenue_per_step = []
     for t in time_indices:
         rev_consumer = consumer_demand[t] * pi_consumer * delta_t
-        rev_grid = (P_PV_grid_vals[t] + P_BESS_grid_vals[t]) * grid_sell_price[t] * delta_t
-        cost_grid = (P_grid_consumer_vals[t] + P_grid_BESS_vals[t]) * grid_buy_price[t] * delta_t
+        rev_grid = P_grid_sold[t] * grid_sell_price[t] * delta_t
+        cost_grid = P_grid_bought[t] * grid_buy_price[t] * delta_t
         cost_pv = pv_power[t] * lcoe_pv * delta_t
         cost_bess = P_BESS_discharge[t] * lcoe_bess * delta_t
         net_rev = rev_consumer + rev_grid - cost_grid - cost_pv - cost_bess
@@ -202,8 +233,12 @@ if LpStatus[prob.status] == "Optimal":
     plt.grid(True)
 
     plt.tight_layout()
-    plt.savefig('optimization_results_plots.png')
+    
+    # Save plot to Output Files folder
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    plt.savefig(os.path.join(output_dir, 'optimization_results_plots.png'))
     # plt.show()  # Uncomment if you want to display during execution
 else:
     print("Optimization did not converge to an optimal solution.")
-

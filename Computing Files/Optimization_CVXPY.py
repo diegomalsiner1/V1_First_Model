@@ -60,6 +60,20 @@ def load_data():
  lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
  eta_charge, eta_discharge, soc_initial, pi_consumer) = load_data()
 
+# Convert data to CVXPY parameters
+pv_power_param = cp.Parameter(n_steps, value=pv_power)
+consumer_demand_param = cp.Parameter(n_steps, value=consumer_demand)
+grid_buy_price_param = cp.Parameter(n_steps, value=grid_buy_price)
+grid_sell_price_param = cp.Parameter(n_steps, value=grid_sell_price)
+lcoe_pv_param = cp.Parameter(value=lcoe_pv)
+lcoe_bess_param = cp.Parameter(value=lcoe_bess)
+bess_capacity_param = cp.Parameter(value=bess_capacity)
+bess_power_limit_param = cp.Parameter(value=bess_power_limit)
+eta_charge_param = cp.Parameter(value=eta_charge)
+eta_discharge_param = cp.Parameter(value=eta_discharge)
+soc_initial_param = cp.Parameter(value=soc_initial)
+pi_consumer_param = cp.Parameter(value=pi_consumer)
+
 # Decision variables
 P_PV_consumer = cp.Variable(n_steps)
 P_PV_BESS = cp.Variable(n_steps)
@@ -81,19 +95,19 @@ constraints = []
 
 # 1. Consumer energy balance
 for t in range(n_steps):
-    constraints.append(P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand[t])
+    constraints.append(P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand_param[t])
 
 # 2. PV power allocation
 for t in range(n_steps):
-    constraints.append(P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t])
+    constraints.append(P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power_param[t])
 
 # 3. BESS power limits and net power definition
 for t in range(n_steps):
     # Define net power (charging is negative, discharging is positive)
     constraints.append(P_net_BESS[t] == (P_PV_BESS[t] + P_grid_BESS[t]) - (P_BESS_consumer[t] + P_BESS_grid[t]))
     # Power limit constraint
-    constraints.append(P_net_BESS[t] >= -bess_power_limit)  # Maximum charging rate
-    constraints.append(P_net_BESS[t] <= bess_power_limit)   # Maximum discharging rate
+    constraints.append(P_net_BESS[t] >= -bess_power_limit_param)  # Maximum charging rate
+    constraints.append(P_net_BESS[t] <= bess_power_limit_param)   # Maximum discharging rate
 
 # 4. Prevent simultaneous charging and discharging using big-M
 for t in range(n_steps):
@@ -102,8 +116,8 @@ for t in range(n_steps):
     # If discharging (P_net_BESS > 0), charging power must be zero
     constraints.append(P_PV_BESS[t] + P_grid_BESS[t] <= M * (1 - is_discharging[t]))
     # Link is_charging and is_discharging to P_net_BESS
-    constraints.append(is_charging[t] >= -P_net_BESS[t] / bess_power_limit)  # 1 when charging, 0 otherwise
-    constraints.append(is_discharging[t] >= P_net_BESS[t] / bess_power_limit)  # 1 when discharging, 0 otherwise
+    constraints.append(is_charging[t] >= -P_net_BESS[t] / bess_power_limit_param)  # 1 when charging, 0 otherwise
+    constraints.append(is_discharging[t] >= P_net_BESS[t] / bess_power_limit_param)  # 1 when discharging, 0 otherwise
     constraints.append(is_charging[t] + is_discharging[t] <= 1)  # Only one can be active
     constraints.append(is_charging[t] >= 0)
     constraints.append(is_discharging[t] >= 0)
@@ -111,15 +125,15 @@ for t in range(n_steps):
     constraints.append(is_discharging[t] <= 1)
 
 # 5. BESS SOC dynamics
-constraints.append(SOC[0] == soc_initial)  # Initial SOC
+constraints.append(SOC[0] == soc_initial_param)  # Initial SOC
 for t in range(n_steps):
-    constraints.append(SOC[t + 1] == SOC[t] + eta_charge * cp.pos(-P_net_BESS[t]) * delta_t -  # Charging
-                      (cp.pos(P_net_BESS[t]) / eta_discharge) * delta_t)  # Discharging
+    constraints.append(SOC[t + 1] == SOC[t] + eta_charge_param * cp.pos(-P_net_BESS[t]) * delta_t -  # Charging
+                      (cp.pos(P_net_BESS[t]) / eta_discharge_param) * delta_t)  # Discharging
 
 # 6. SOC bounds
 for t in range(n_steps + 1):
     constraints.append(SOC[t] >= 0)
-    constraints.append(SOC[t] <= bess_capacity)
+    constraints.append(SOC[t] <= bess_capacity_param)
 
 # 7. Non-negativity constraints (relaxed for grid flows)
 for t in range(n_steps):
@@ -132,11 +146,11 @@ for t in range(n_steps):
 
 # Objective function: Maximize revenue
 # Revenue from consumer, grid sales, minus costs of grid purchase, PV, and BESS
-revenue = (cp.sum(P_PV_consumer + P_BESS_consumer + P_grid_consumer) * pi_consumer * delta_t +
-           cp.sum((P_PV_grid + cp.pos(P_BESS_grid)) * grid_sell_price) * delta_t -
-           cp.sum((P_grid_consumer + cp.pos(-P_grid_BESS)) * grid_buy_price) * delta_t -
-           cp.sum(pv_power) * lcoe_pv * delta_t -
-           cp.sum((P_BESS_consumer + cp.pos(P_BESS_grid)) * lcoe_bess) * delta_t)
+revenue = (cp.sum(P_PV_consumer + P_BESS_consumer + P_grid_consumer) * pi_consumer_param * delta_t +
+           cp.sum((P_PV_grid + cp.pos(P_BESS_grid)) * grid_sell_price_param) * delta_t -
+           cp.sum((P_grid_consumer + cp.pos(-P_grid_BESS)) * grid_buy_price_param) * delta_t -
+           cp.sum(pv_power_param) * lcoe_pv_param * delta_t -
+           cp.sum((P_BESS_consumer + cp.pos(P_BESS_grid)) * lcoe_bess_param) * delta_t)
 
 # Define and solve the problem
 prob = cp.Problem(cp.Maximize(revenue), constraints)
@@ -168,11 +182,11 @@ if prob.status == cp.OPTIMAL:
     # Compute revenue per time step
     revenue_per_step = []
     for t in range(n_steps):
-        rev_consumer = (P_PV_consumer_vals[t] + P_BESS_consumer_vals[t] + P_grid_consumer_vals[t]) * pi_consumer * delta_t
-        rev_grid = (P_grid_sold[t]) * grid_sell_price[t] * delta_t
-        cost_grid = (P_grid_bought[t]) * grid_buy_price[t] * delta_t
-        cost_pv = pv_power[t] * lcoe_pv * delta_t
-        cost_bess = P_BESS_discharge[t] * lcoe_bess * delta_t
+        rev_consumer = (P_PV_consumer_vals[t] + P_BESS_consumer_vals[t] + P_grid_consumer_vals[t]) * pi_consumer_param.value * delta_t
+        rev_grid = (P_grid_sold[t]) * grid_sell_price_param.value[t] * delta_t
+        cost_grid = (P_grid_bought[t]) * grid_buy_price_param.value[t] * delta_t
+        cost_pv = pv_power_param.value[t] * lcoe_pv_param.value * delta_t
+        cost_bess = P_BESS_discharge[t] * lcoe_bess_param.value * delta_t
         net_rev = rev_consumer + rev_grid - cost_grid - cost_pv - cost_bess
         revenue_per_step.append(net_rev)
 
@@ -184,7 +198,7 @@ if prob.status == cp.OPTIMAL:
 
     # Graph 1: PV Production
     plt.subplot(5, 1, 1)
-    plt.plot(time_steps, pv_power, label='PV Power (kW)', color='orange')
+    plt.plot(time_steps, pv_power_param.value, label='PV Power (kW)', color='orange')
     plt.xlabel('Time (hours)')
     plt.ylabel('Power (kW)')
     plt.title('PV Power Production Profile')
@@ -230,8 +244,8 @@ if prob.status == cp.OPTIMAL:
 
     # Graph 5: Financials
     plt.subplot(5, 1, 5)
-    plt.plot(time_steps, grid_buy_price, label='Grid Buy Price ($/kWh)', color='blue')
-    plt.plot(time_steps, grid_sell_price, label='Grid Sell Price ($/kWh)', color='green')
+    plt.plot(time_steps, grid_buy_price_param.value, label='Grid Buy Price ($/kWh)', color='blue')
+    plt.plot(time_steps, grid_sell_price_param.value, label='Grid Sell Price ($/kWh)', color='green')
     plt.plot(time_steps, revenue_per_step, label='Net Revenue ($)', color='purple')
     cumulative_revenue = np.cumsum(revenue_per_step)
     plt.plot(time_steps, cumulative_revenue, label='Cumulative Revenue ($)', color='red')

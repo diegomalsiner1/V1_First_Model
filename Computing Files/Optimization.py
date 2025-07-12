@@ -3,9 +3,7 @@ import numpy as np
 from pulp import LpProblem, LpVariable, lpSum, LpMaximize, LpStatus
 import matplotlib.pyplot as plt
 
-
-print("--- Running the REAL Optimization Script ---") # Add this line
-
+print("--- Running the REAL Optimization Script ---")
 
 # Time framework: 24 hours, 15-minute intervals (96 steps)
 time_steps = np.arange(0, 24, 0.25)
@@ -48,30 +46,6 @@ def load_data():
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
             eta_charge, eta_discharge, soc_initial, pi_consumer)
-
-# Uncomment this when actual data files are available
-# def load_data():
-#     pv_data = pd.read_csv('Input Data Files/PV_Energy_Profile.csv')
-#     market_data = pd.read_csv('Input Data Files/Market_Price.csv')
-#     constants = pd.read_csv('Input Data Files/Constants_Plant.csv')
-#     lcoe_pv_data = pd.read_csv('Input Data Files/PV_LCOE.csv')
-#     lcoe_bess_data = pd.read_csv('Input Data Files/BESS_LCOE.csv')
-#     # Extract data (assuming formats as above)
-#     pv_power = pv_data['PV_Power'].values
-#     consumer_demand = constants[constants['Parameter'] == 'Consumer_Demand']['Value'].values
-#     grid_buy_price = market_data['Grid_Buy_Price'].values
-#     grid_sell_price = market_data['Grid_Sell_Price'].values
-#     lcoe_pv = lcoe_pv_data['LCOE_PV'].iloc[0]
-#     lcoe_bess = lcoe_bess_data['LCOE_BESS'].iloc[0]
-#     bess_capacity = float(constants[constants['Parameter'] == 'BESS_Capacity']['Value'])
-#     bess_power_limit = float(constants[constants['Parameter'] == 'BESS_Power_Limit']['Value'])
-#     eta_charge = float(constants[constants['Parameter'] == 'BESS_Efficiency_Charge']['Value'])
-#     eta_discharge = float(constants[constants['Parameter'] == 'BESS_Efficiency_Discharge']['Value'])
-#     soc_initial = float(constants[constants['Parameter'] == 'SOC_Initial']['Value'])
-#     pi_consumer = float(constants[constants['Parameter'] == 'Consumer_Price']['Value'])
-#     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
-#             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
-#             eta_charge, eta_discharge, soc_initial, pi_consumer)
 
 # Load data
 (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
@@ -139,6 +113,10 @@ if LpStatus[prob.status] == "Optimal":
     P_BESS_charge = [P_PV_BESS_vals[t] + P_grid_BESS_vals[t] for t in time_indices]
     P_BESS_discharge = [P_BESS_consumer_vals[t] + P_BESS_grid_vals[t] for t in time_indices]
 
+    # Compute Grid sold and bought powers
+    P_grid_sold = [P_PV_grid_vals[t] + P_BESS_grid_vals[t] for t in time_indices]
+    P_grid_bought = [P_grid_consumer_vals[t] + P_grid_BESS_vals[t] for t in time_indices]
+
     # Compute revenue per time step
     revenue_per_step = []
     for t in time_indices:
@@ -154,10 +132,10 @@ if LpStatus[prob.status] == "Optimal":
     print(f"Total Revenue: ${total_revenue:.2f}")
 
     # Plotting critical parameters
-    plt.figure(figsize=(12, 10))
+    plt.figure(figsize=(12, 12))
 
     # BESS Power Flows
-    plt.subplot(3, 1, 1)
+    plt.subplot(4, 1, 1)
     plt.plot(time_steps, P_BESS_charge, label='BESS Charge (kW)', color='blue')
     plt.plot(time_steps, P_BESS_discharge, label='BESS Discharge (kW)', color='red')
     plt.xlabel('Time (hours)')
@@ -167,7 +145,7 @@ if LpStatus[prob.status] == "Optimal":
     plt.grid(True)
 
     # BESS State of Charge
-    plt.subplot(3, 1, 2)
+    plt.subplot(4, 1, 2)
     plt.plot(np.arange(0, 24.25, 0.25), SOC_vals, label='SOC (kWh)', color='green')
     plt.xlabel('Time (hours)')
     plt.ylabel('SOC (kWh)')
@@ -175,8 +153,18 @@ if LpStatus[prob.status] == "Optimal":
     plt.legend()
     plt.grid(True)
 
+    # Grid Power Flows
+    plt.subplot(4, 1, 3)
+    plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='orange')
+    plt.plot(time_steps, P_grid_bought, label='Grid Bought (kW)', color='brown')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('Power (kW)')
+    plt.title('Grid Power Flows')
+    plt.legend()
+    plt.grid(True)
+
     # Revenue over Time
-    plt.subplot(3, 1, 3)
+    plt.subplot(4, 1, 4)
     plt.plot(time_steps, revenue_per_step, label='Net Revenue ($)', color='purple')
     plt.xlabel('Time (hours)')
     plt.ylabel('Revenue ($)')
@@ -185,7 +173,7 @@ if LpStatus[prob.status] == "Optimal":
     plt.grid(True)
 
     plt.tight_layout()
-    plt.savefig('optimization_results_plots.png') # Or specific names for each subplot
-    # plt.show() # Remove or comment this out for server-side execution
+    plt.savefig('optimization_results_plots.png')
+    # plt.show()  # Uncomment if you want to display during execution
 else:
     print("Optimization did not converge to an optimal solution.")

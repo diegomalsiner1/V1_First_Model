@@ -131,49 +131,69 @@ if LpStatus[prob.status] == "Optimal":
     total_revenue = sum(revenue_per_step)
     print(f"Total Revenue: ${total_revenue:.2f}")
 
-    # Plotting critical parameters
-    plt.figure(figsize=(12, 12))
+ 
+# Plotting critical parameters
+plt.figure(figsize=(12, 20))  # Increased height for 5 subplots
 
-    # BESS Power Flows
-    plt.subplot(4, 1, 1)
-    plt.plot(time_steps, P_BESS_charge, label='BESS Charge (kW)', color='blue')
-    plt.plot(time_steps, P_BESS_discharge, label='BESS Discharge (kW)', color='red')
-    plt.xlabel('Time (hours)')
-    plt.ylabel('Power (kW)')
-    plt.title('BESS Power Flows')
-    plt.legend()
-    plt.grid(True)
+# Graph 1: PV Production
+plt.subplot(5, 1, 1)
+plt.plot(time_steps, pv_power, label='PV Power (kW)', color='orange')
+plt.xlabel('Time (hours)')
+plt.ylabel('Power (kW)')
+plt.title('PV Power Production Profile')
+plt.legend()
+plt.grid(True)
 
-    # BESS State of Charge
-    plt.subplot(4, 1, 2)
-    plt.plot(np.arange(0, 24.25, 0.25), SOC_vals, label='SOC (kWh)', color='green')
-    plt.xlabel('Time (hours)')
-    plt.ylabel('SOC (kWh)')
-    plt.title('BESS State of Charge')
-    plt.legend()
-    plt.grid(True)
+# Graph 2: Consumer Energy Composition
+plt.subplot(5, 1, 2)
+plt.stackplot(time_steps, P_PV_consumer_vals, P_BESS_consumer_vals, P_grid_consumer_vals,
+              labels=['PV to Consumer', 'BESS to Consumer', 'Grid to Consumer'],
+              colors=['orange', 'green', 'blue'])
+plt.xlabel('Time (hours)')
+plt.ylabel('Power (kW)')
+plt.title('Consumer Energy Composition')
+plt.legend(loc='upper left')
+plt.grid(True)
 
-    # Grid Power Flows
-    plt.subplot(4, 1, 3)
-    plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='orange')
-    plt.plot(time_steps, P_grid_bought, label='Grid Bought (kW)', color='brown')
-    plt.xlabel('Time (hours)')
-    plt.ylabel('Power (kW)')
-    plt.title('Grid Power Flows')
-    plt.legend()
-    plt.grid(True)
+# Graph 3: BESS Power and SOC
+plt.subplot(5, 1, 3)
+ax1 = plt.gca()
+ax1.plot(time_steps, P_BESS_charge, label='BESS Charge (kW)', color='blue')
+ax1.plot(time_steps, P_BESS_discharge, label='BESS Discharge (kW)', color='red')
+ax1.set_xlabel('Time (hours)')
+ax1.set_ylabel('Power (kW)')
+ax1.set_title('BESS Power Flows and SOC')
+ax1.legend(loc='upper left')
+ax1.grid(True)
 
-    # Revenue over Time
-    plt.subplot(4, 1, 4)
-    plt.plot(time_steps, revenue_per_step, label='Net Revenue ($)', color='purple')
-    plt.xlabel('Time (hours)')
-    plt.ylabel('Revenue ($)')
-    plt.title('Net Revenue over Time')
-    plt.legend()
-    plt.grid(True)
+ax2 = ax1.twinx()
+ax2.plot(np.arange(0, 24.25, 0.25), SOC_vals, label='SOC (kWh)', color='green', linestyle='--')
+ax2.set_ylabel('SOC (kWh)')
+ax2.legend(loc='upper right')
 
-    plt.tight_layout()
-    plt.savefig('optimization_results_plots.png')
-    # plt.show()  # Uncomment if you want to display during execution
-else:
-    print("Optimization did not converge to an optimal solution.")
+# Graph 4: Grid Power Flows
+plt.subplot(5, 1, 4)
+plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='orange')
+plt.plot(time_steps, P_grid_bought, label='Grid Bought (kW)', color='brown')
+plt.xlabel('Time (hours)')
+plt.ylabel('Power (kW)')
+plt.title('Grid Power Flows')
+plt.legend()
+plt.grid(True)
+
+# Graph 5: Financials
+plt.subplot(5, 1, 5)
+plt.plot(time_steps, grid_buy_price, label='Grid Buy Price ($/kWh)', color='blue')
+plt.plot(time_steps, grid_sell_price, label='Grid Sell Price ($/kWh)', color='green')
+plt.plot(time_steps, revenue_per_step, label='Net Revenue ($)', color='purple')
+cumulative_revenue = np.cumsum(revenue_per_step)
+plt.plot(time_steps, cumulative_revenue, label='Cumulative Revenue ($)', color='red')
+plt.xlabel('Time (hours)')
+plt.ylabel('Financials')
+plt.title('Financials over Time')
+plt.legend()
+plt.grid(True)
+
+plt.tight_layout()
+plt.savefig('optimization_results_plots.png')
+# plt.show()  # Uncomment if you want to display during execution

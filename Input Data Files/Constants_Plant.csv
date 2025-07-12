@@ -1,7 +1,7 @@
 Parameter,Value
-BESS_Capacity,4000
-BESS_Power_Limit,100
+BESS_Capacity,6000
+BESS_Power_Limit,300
 BESS_Efficiency_Charge,0.984
 BESS_Efficiency_Discharge,0.984
-SOC_Initial, 2000
+SOC_Initial, 1000
 Consumer_Price,0.12 

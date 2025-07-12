@@ -1,1 +1,7 @@
-
+Parameter,Value #To initialize, sample numbers
+BESS_Capacity,200.0 #kWh
+BESS_Power_Limit,50.0 #kW, power flow limit
+BESS_Efficiency_Charge,0.9 
+BESS_Efficiency_Discharge,0.9
+SOC_Initial,100.0
+Consumer_Price,0.12 # Euro/kWh 

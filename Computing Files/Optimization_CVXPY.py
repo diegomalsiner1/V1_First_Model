@@ -12,25 +12,23 @@ n_steps = len(time_steps)
 delta_t = 0.25  # hours
 
 def load_data():
-    # Debug: Print file content
-    with open('../Input Data Files/Constants_Plant.csv', 'r') as file:
-        print("Constants_Plant.csv content:", file.read())
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
-    pv_lcoe_data = pd.read_csv('../Input Data Files/PV_LCOE.csv', comment='#')
-    lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]  # 0.055 EUR/kWh
+    # Using absolute paths as per your request
+    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv', comment='#')
+    lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]
 
     # Load LCOE for BESS from BESS_LCOE.csv, ignoring comment lines
-    bess_lcoe_data = pd.read_csv('../Input Data Files/BESS_LCOE.csv', comment='#')
-    lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]  # 0.08 EUR/kWh
+    bess_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/BESS_LCOE.csv', comment='#')
+    lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]
 
     # Load constants from Constants_Plant.csv, ignoring comment lines
-    constants_data = pd.read_csv('../Input Data Files/Constants_Plant.csv', comment='#')
-    bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])  # 4000 kWh
-    bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])  # 300 kW
-    eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])  # 0.984
-    eta_discharge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Discharge']['Value'].iloc[0])  # 0.984
-    soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])  # 1000 kWh
-    pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])  # 0.12 EUR/kWh
+    constants_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/Constants_Plant.csv', comment='#')
+    bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])
+    bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])
+    eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])
+    eta_discharge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Discharge']['Value'].iloc[0])
+    soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])
+    pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])
 
     # Sample PV power profile (kW): sinusoidal daytime generation
     pv_power = np.zeros(n_steps)
@@ -39,10 +37,10 @@ def load_data():
             pv_power[i] = 1327 * np.sin(np.pi * (t - 6) / 12)
 
     # Sample consumer demand (kW): constant load of 200 kW with 100 kW step from 8 AM to 6 PM
-    consumer_demand = np.full(n_steps, 200.0)  # Baseline constant load of 200 kW
+    consumer_demand = np.full(n_steps, 200.0)
     for i, t in enumerate(time_steps):
-        if 8 <= t <= 18:  # 8:00 to 18:00
-            consumer_demand[i] += 100.0  # Reduced to 100 kW step
+        if 8 <= t <= 18:
+            consumer_demand[i] += 100.0
 
     # Sample grid prices ($/kWh): higher buy price during peak hours
     grid_buy_price = np.full(n_steps, 0.15)
@@ -74,21 +72,19 @@ eta_discharge_param = cp.Parameter(value=eta_discharge)
 soc_initial_param = cp.Parameter(value=soc_initial)
 pi_consumer_param = cp.Parameter(value=pi_consumer)
 
-# Decision variables
-P_PV_consumer = cp.Variable(n_steps)
-P_PV_BESS = cp.Variable(n_steps)
-P_PV_grid = cp.Variable(n_steps)
-P_BESS_consumer = cp.Variable(n_steps)
-P_BESS_grid = cp.Variable(n_steps)
-P_grid_consumer = cp.Variable(n_steps)
-P_grid_BESS = cp.Variable(n_steps)  # Allow negative for grid to BESS
-SOC = cp.Variable(n_steps + 1)
+# Decision variables (all non-negative)
+P_PV_consumer = cp.Variable(n_steps, nonneg=True)
+P_PV_BESS = cp.Variable(n_steps, nonneg=True)
+P_PV_grid = cp.Variable(n_steps, nonneg=True)
+P_BESS_consumer = cp.Variable(n_steps, nonneg=True)
+P_BESS_grid = cp.Variable(n_steps, nonneg=True)
+P_grid_consumer = cp.Variable(n_steps, nonneg=True)
+P_grid_BESS = cp.Variable(n_steps, nonneg=True) # Power from grid to BESS
+SOC = cp.Variable(n_steps + 1, nonneg=True)
 
-# Auxiliary variables for net BESS power and charge/discharge indicators
-P_net_BESS = cp.Variable(n_steps)  # Net power into BESS (negative = charging, positive = discharging)
-is_charging = cp.Variable(n_steps, boolean=False)  # Continuous relaxation (0 to 1) for charging
-is_discharging = cp.Variable(n_steps, boolean=False)  # Continuous relaxation (0 to 1) for discharging
-M = 1e6  # Large constant for big-M formulation
+# New variables for total BESS charge/discharge to simplify SOC dynamics and enforce limits
+P_BESS_charge_total = cp.Variable(n_steps, nonneg=True)
+P_BESS_discharge_total = cp.Variable(n_steps, nonneg=True)
 
 # Constraints
 constraints = []
@@ -101,56 +97,35 @@ for t in range(n_steps):
 for t in range(n_steps):
     constraints.append(P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power_param[t])
 
-# 3. BESS power limits and net power definition
+# 3. BESS power limits and definition of total charge/discharge
 for t in range(n_steps):
-    # Define net power (charging is negative, discharging is positive)
-    constraints.append(P_net_BESS[t] == (P_PV_BESS[t] + P_grid_BESS[t]) - (P_BESS_consumer[t] + P_BESS_grid[t]))
-    # Power limit constraint
-    constraints.append(P_net_BESS[t] >= -bess_power_limit_param)  # Maximum charging rate
-    constraints.append(P_net_BESS[t] <= bess_power_limit_param)   # Maximum discharging rate
+    # Total power flowing INTO BESS
+    constraints.append(P_PV_BESS[t] + P_grid_BESS[t] == P_BESS_charge_total[t])
+    # Total power flowing OUT OF BESS
+    constraints.append(P_BESS_consumer[t] + P_BESS_grid[t] == P_BESS_discharge_total[t])
 
-# 4. Prevent simultaneous charging and discharging using big-M
-for t in range(n_steps):
-    # If charging (P_net_BESS < 0), discharging power must be zero
-    constraints.append(P_BESS_consumer[t] + P_BESS_grid[t] <= M * (1 - is_charging[t]))
-    # If discharging (P_net_BESS > 0), charging power must be zero
-    constraints.append(P_PV_BESS[t] + P_grid_BESS[t] <= M * (1 - is_discharging[t]))
-    # Link is_charging and is_discharging to P_net_BESS
-    constraints.append(is_charging[t] >= -P_net_BESS[t] / bess_power_limit_param)  # 1 when charging, 0 otherwise
-    constraints.append(is_discharging[t] >= P_net_BESS[t] / bess_power_limit_param)  # 1 when discharging, 0 otherwise
-    constraints.append(is_charging[t] + is_discharging[t] <= 1)  # Only one can be active
-    constraints.append(is_charging[t] >= 0)
-    constraints.append(is_discharging[t] >= 0)
-    constraints.append(is_charging[t] <= 1)
-    constraints.append(is_discharging[t] <= 1)
+    # BESS power limits
+    constraints.append(P_BESS_charge_total[t] <= bess_power_limit_param)
+    constraints.append(P_BESS_discharge_total[t] <= bess_power_limit_param)
 
-# 5. BESS SOC dynamics
+# 4. BESS SOC dynamics
 constraints.append(SOC[0] == soc_initial_param)  # Initial SOC
 for t in range(n_steps):
-    constraints.append(SOC[t + 1] == SOC[t] + eta_charge_param * cp.pos(-P_net_BESS[t]) * delta_t -  # Charging
-                      (cp.pos(P_net_BESS[t]) / eta_discharge_param) * delta_t)  # Discharging
+    constraints.append(SOC[t + 1] == SOC[t] + cp.multiply(eta_charge_param, P_BESS_charge_total[t]) * delta_t - \
+                                    cp.multiply(1 / eta_discharge_param, P_BESS_discharge_total[t]) * delta_t)
 
-# 6. SOC bounds
+# 5. SOC bounds
 for t in range(n_steps + 1):
     constraints.append(SOC[t] >= 0)
     constraints.append(SOC[t] <= bess_capacity_param)
 
-# 7. Non-negativity constraints (relaxed for grid flows)
-for t in range(n_steps):
-    constraints.append(P_PV_consumer[t] >= 0)
-    constraints.append(P_PV_BESS[t] >= 0)
-    constraints.append(P_PV_grid[t] >= 0)
-    constraints.append(P_BESS_consumer[t] >= 0)
-    # Allow P_BESS_grid and P_grid_BESS to be negative for grid charging
-    constraints.append(P_grid_consumer[t] >= 0)
-
 # Objective function: Maximize revenue
 # Revenue from consumer, grid sales, minus costs of grid purchase, PV, and BESS
-revenue = cp.sum((P_PV_consumer + P_BESS_consumer + P_grid_consumer) * pi_consumer_param.value * delta_t) + \
-          cp.sum((P_PV_grid + cp.pos(P_BESS_grid)) * grid_sell_price_param.value * delta_t) - \
-          cp.sum((P_grid_consumer + cp.pos(-P_grid_BESS)) * grid_buy_price_param.value * delta_t) - \
-          cp.sum(pv_power_param.value) * lcoe_pv_param.value * delta_t - \
-          cp.sum((P_BESS_consumer + cp.pos(P_BESS_grid)) * lcoe_bess_param.value * delta_t)
+revenue = cp.sum(cp.multiply(consumer_demand_param, pi_consumer_param)) * delta_t + \
+          cp.sum(cp.multiply((P_PV_grid + P_BESS_grid), grid_sell_price_param)) * delta_t - \
+          cp.sum(cp.multiply((P_grid_consumer + P_grid_BESS), grid_buy_price_param)) * delta_t - \
+          cp.sum(cp.multiply(pv_power_param, lcoe_pv_param)) * delta_t - \
+          cp.sum(cp.multiply(P_BESS_discharge_total, lcoe_bess_param)) * delta_t
 
 # Define and solve the problem
 prob = cp.Problem(cp.Maximize(revenue), constraints)
@@ -167,26 +142,21 @@ if prob.status == cp.OPTIMAL:
     P_grid_consumer_vals = P_grid_consumer.value
     P_grid_BESS_vals = P_grid_BESS.value
     SOC_vals = SOC.value
-    P_net_BESS_vals = P_net_BESS.value
-    is_charging_vals = is_charging.value
-    is_discharging_vals = is_discharging.value
+    P_BESS_charge_total_vals = P_BESS_charge_total.value
+    P_BESS_discharge_total_vals = P_BESS_discharge_total.value
 
-    # Compute BESS charge and discharge powers
-    P_BESS_charge = -np.minimum(P_net_BESS_vals, 0)  # Negative values indicate charging
-    P_BESS_discharge = np.maximum(P_net_BESS_vals, 0)  # Positive values indicate discharging
+    # Compute Grid sold and bought powers for plotting
+    P_grid_sold = P_PV_grid_vals + P_BESS_grid_vals
+    P_grid_bought = P_grid_consumer_vals + P_grid_BESS_vals
 
-    # Compute Grid sold and bought powers
-    P_grid_sold = np.maximum(P_PV_grid_vals + P_BESS_grid_vals, 0)
-    P_grid_bought = -np.minimum(P_grid_consumer_vals + P_grid_BESS_vals, 0)
-
-    # Compute revenue per time step
+    # Compute revenue per time step for plotting
     revenue_per_step = []
     for t in range(n_steps):
-        rev_consumer = (P_PV_consumer_vals[t] + P_BESS_consumer_vals[t] + P_grid_consumer_vals[t]) * pi_consumer_param.value * delta_t
-        rev_grid = (P_grid_sold[t]) * grid_sell_price_param.value[t] * delta_t
-        cost_grid = (P_grid_bought[t]) * grid_buy_price_param.value[t] * delta_t
+        rev_consumer = consumer_demand[t] * pi_consumer_param.value * delta_t
+        rev_grid = P_grid_sold[t] * grid_sell_price_param.value[t] * delta_t
+        cost_grid = P_grid_bought[t] * grid_buy_price_param.value[t] * delta_t
         cost_pv = pv_power_param.value[t] * lcoe_pv_param.value * delta_t
-        cost_bess = P_BESS_discharge[t] * lcoe_bess_param.value * delta_t
+        cost_bess = P_BESS_discharge_total_vals[t] * lcoe_bess_param.value * delta_t
         net_rev = rev_consumer + rev_grid - cost_grid - cost_pv - cost_bess
         revenue_per_step.append(net_rev)
 
@@ -219,8 +189,8 @@ if prob.status == cp.OPTIMAL:
     # Graph 3: BESS Power and SOC
     plt.subplot(5, 1, 3)
     ax1 = plt.gca()
-    ax1.plot(time_steps, P_BESS_charge, label='BESS Charge (kW)', color='blue')
-    ax1.plot(time_steps, P_BESS_discharge, label='BESS Discharge (kW)', color='red')
+    ax1.plot(time_steps, P_BESS_charge_total_vals, label='BESS Charge (kW)', color='blue')
+    ax1.plot(time_steps, P_BESS_discharge_total_vals, label='BESS Discharge (kW)', color='red')
     ax1.set_xlabel('Time (hours)')
     ax1.set_ylabel('Power (kW)')
     ax1.set_title('BESS Power Flows and SOC')
@@ -265,3 +235,4 @@ if prob.status == cp.OPTIMAL:
     # plt.show()  # Uncomment if you want to display during execution
 else:
     print(f"Optimization failed with status: {prob.status}")
+

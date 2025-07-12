@@ -181,6 +181,7 @@ if LpStatus[prob.status] == "Optimal":
     plt.grid(True)
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig('optimization_results_plots.png') # Or specific names for each subplot
+    # plt.show() # Remove or comment this out for server-side execution
 else:
     print("Optimization did not converge to an optimal solution.")

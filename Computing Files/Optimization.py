@@ -42,7 +42,7 @@ def load_data():
     consumer_demand = np.full(n_steps, 200.0)  # Baseline constant load of 200 kWh
     for i, t in enumerate(time_steps):
         if 8 <= t <= 18:  # 8:00 to 18:00
-            consumer_demand[i] += 500.0  # Add 500 kW step
+            consumer_demand[i] += 100.0  # Add 500 kW step
 
     # Sample grid prices ($/kWh): higher buy price during peak hours
     grid_buy_price = np.full(n_steps, 0.15)

@@ -107,7 +107,7 @@ for t in range(n_steps):
     constraints.append(P_grid_BESS[t] >= 0)
 
 # Objective function: Maximize revenue
-revenue = cp.sum([consumer_demand[t] * pi_consumer * delta_t for t in range(n کامپیوترsteps)]) + \
+revenue = cp.sum([consumer_demand[t] * pi_consumer * delta_t for t in range(n_steps)]) + \
           cp.sum([(P_PV_grid[t] + P_BESS_grid[t]) * grid_sell_price[t] * delta_t for t in range(n_steps)]) - \
           cp.sum([(P_grid_consumer[t] + P_grid_BESS[t]) * grid_buy_price[t] * delta_t for t in range(n_steps)]) - \
           cp.sum([pv_power[t] * lcoe_pv * delta_t for t in range(n_steps)]) - \

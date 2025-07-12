@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import cvxpy as cp
 import matplotlib.pyplot as plt
+import os
 
 print("--- Running the REAL Optimization Script with CVXPY ---")
 
@@ -177,9 +178,10 @@ if prob.status == cp.OPTIMAL:
     total_revenue = sum(revenue_per_step)
     print(f"Total Revenue: ${total_revenue:.2f}")
 
-    # Plotting
-    plt.figure(figsize=(12, 20))
+    # Plotting critical parameters
+    plt.figure(figsize=(12, 20))  # Increased height for 5 subplots
 
+    # Graph 1: PV Production
     plt.subplot(5, 1, 1)
     plt.plot(time_steps, pv_power, label='PV Power (kW)', color='orange')
     plt.xlabel('Time (hours)')
@@ -188,6 +190,7 @@ if prob.status == cp.OPTIMAL:
     plt.legend()
     plt.grid(True)
 
+    # Graph 2: Consumer Energy Composition
     plt.subplot(5, 1, 2)
     plt.stackplot(time_steps, P_PV_consumer_vals, P_BESS_consumer_vals, P_grid_consumer_vals,
                   labels=['PV to Consumer', 'BESS to Consumer', 'Grid to Consumer'],
@@ -198,6 +201,7 @@ if prob.status == cp.OPTIMAL:
     plt.legend(loc='upper left')
     plt.grid(True)
 
+    # Graph 3: BESS Power and SOC
     plt.subplot(5, 1, 3)
     ax1 = plt.gca()
     ax1.plot(time_steps, P_BESS_charge, label='BESS Charge (kW)', color='blue')
@@ -213,6 +217,7 @@ if prob.status == cp.OPTIMAL:
     ax2.set_ylabel('SOC (kWh)')
     ax2.legend(loc='upper right')
 
+    # Graph 4: Grid Power Flows
     plt.subplot(5, 1, 4)
     plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='orange')
     plt.plot(time_steps, P_grid_bought, label='Grid Bought (kW)', color='brown')
@@ -222,6 +227,7 @@ if prob.status == cp.OPTIMAL:
     plt.legend()
     plt.grid(True)
 
+    # Graph 5: Financials
     plt.subplot(5, 1, 5)
     plt.plot(time_steps, grid_buy_price, label='Grid Buy Price ($/kWh)', color='blue')
     plt.plot(time_steps, grid_sell_price, label='Grid Sell Price ($/kWh)', color='green')
@@ -235,6 +241,12 @@ if prob.status == cp.OPTIMAL:
     plt.grid(True)
 
     plt.tight_layout()
-    plt.savefig('optimization_results_plots.png')
+
+    # Save plot to Output Files folder
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    plt.savefig(os.path.join(output_dir, 'optimization_results_plots.png'))
+    # plt.show()  # Uncomment if you want to display during execution
 else:
     print(f"Optimization failed with status: {prob.status}")

@@ -26,10 +26,10 @@ def load_data():
     # Load constants from Constants_Plant.csv, ignoring comment lines
     constants_data = pd.read_csv('../Input Data Files/Constants_Plant.csv', comment='#')
     bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])  # 4000 kWh
-    bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])  # 100 kW
+    bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])  # 300 kW
     eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])  # 0.984
     eta_discharge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Discharge']['Value'].iloc[0])  # 0.984
-    soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])  # 2000 kWh
+    soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])  # 1000 kWh
     pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])  # 0.12 EUR/kWh
 
     # Sample PV power profile (kW): sinusoidal daytime generation
@@ -130,12 +130,13 @@ for t in range(n_steps):
     # Allow P_BESS_grid and P_grid_BESS to be negative for grid charging
     constraints.append(P_grid_consumer[t] >= 0)
 
-# Objective function: Maximize revenue (corrected)
-revenue = cp.sum([(P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t]) * pi_consumer * delta_t for t in range(n_steps)]) + \
-          cp.sum([(P_PV_grid[t] + cp.pos(P_BESS_grid[t])) * grid_sell_price[t] * delta_t for t in range(n_steps)]) - \
-          cp.sum([(P_grid_consumer[t] + cp.pos(-P_grid_BESS[t])) * grid_buy_price[t] * delta_t for t in range(n_steps)]) - \
-          cp.sum([pv_power[t] * lcoe_pv * delta_t for t in range(n_steps)]) - \
-          cp.sum([(P_BESS_consumer[t] + cp.pos(P_BESS_grid[t])) * lcoe_bess * delta_t for t in range(n_steps)])
+# Objective function: Maximize revenue
+# Revenue from consumer, grid sales, minus costs of grid purchase, PV, and BESS
+revenue = (cp.sum(P_PV_consumer + P_BESS_consumer + P_grid_consumer) * pi_consumer * delta_t +
+           cp.sum((P_PV_grid + cp.pos(P_BESS_grid)) * grid_sell_price) * delta_t -
+           cp.sum((P_grid_consumer + cp.pos(-P_grid_BESS)) * grid_buy_price) * delta_t -
+           cp.sum(pv_power) * lcoe_pv * delta_t -
+           cp.sum((P_BESS_consumer + cp.pos(P_BESS_grid)) * lcoe_bess) * delta_t)
 
 # Define and solve the problem
 prob = cp.Problem(cp.Maximize(revenue), constraints)
@@ -157,19 +158,19 @@ if prob.status == cp.OPTIMAL:
     is_discharging_vals = is_discharging.value
 
     # Compute BESS charge and discharge powers
-    P_BESS_charge = -cp.minimum(P_net_BESS_vals, 0)  # Negative values indicate charging
-    P_BESS_discharge = cp.maximum(P_net_BESS_vals, 0)  # Positive values indicate discharging
+    P_BESS_charge = -np.minimum(P_net_BESS_vals, 0)  # Negative values indicate charging
+    P_BESS_discharge = np.maximum(P_net_BESS_vals, 0)  # Positive values indicate discharging
 
     # Compute Grid sold and bought powers
-    P_grid_sold = cp.maximum(P_PV_grid_vals + P_BESS_grid_vals, 0)
-    P_grid_bought = -cp.minimum(P_grid_consumer_vals + P_grid_BESS_vals, 0)
+    P_grid_sold = np.maximum(P_PV_grid_vals + P_BESS_grid_vals, 0)
+    P_grid_bought = -np.minimum(P_grid_consumer_vals + P_grid_BESS_vals, 0)
 
     # Compute revenue per time step
     revenue_per_step = []
     for t in range(n_steps):
         rev_consumer = (P_PV_consumer_vals[t] + P_BESS_consumer_vals[t] + P_grid_consumer_vals[t]) * pi_consumer * delta_t
-        rev_grid = P_grid_sold[t] * grid_sell_price[t] * delta_t
-        cost_grid = P_grid_bought[t] * grid_buy_price[t] * delta_t
+        rev_grid = (P_grid_sold[t]) * grid_sell_price[t] * delta_t
+        cost_grid = (P_grid_bought[t]) * grid_buy_price[t] * delta_t
         cost_pv = pv_power[t] * lcoe_pv * delta_t
         cost_bess = P_BESS_discharge[t] * lcoe_bess * delta_t
         net_rev = rev_consumer + rev_grid - cost_grid - cost_pv - cost_bess

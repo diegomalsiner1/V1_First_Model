@@ -146,11 +146,11 @@ for t in range(n_steps):
 
 # Objective function: Maximize revenue
 # Revenue from consumer, grid sales, minus costs of grid purchase, PV, and BESS
-revenue = (cp.sum(P_PV_consumer + P_BESS_consumer + P_grid_consumer) * pi_consumer_param * delta_t +
-           cp.sum((P_PV_grid + cp.pos(P_BESS_grid)) * grid_sell_price_param) * delta_t -
-           cp.sum((P_grid_consumer + cp.pos(-P_grid_BESS)) * grid_buy_price_param) * delta_t -
-           cp.sum(pv_power_param) * lcoe_pv_param * delta_t -
-           cp.sum((P_BESS_consumer + cp.pos(P_BESS_grid)) * lcoe_bess_param) * delta_t)
+revenue = cp.sum((P_PV_consumer + P_BESS_consumer + P_grid_consumer) * pi_consumer_param * delta_t) + \
+          cp.sum((P_PV_grid + cp.pos(P_BESS_grid)) * grid_sell_price_param * delta_t) - \
+          cp.sum((P_grid_consumer + cp.pos(-P_grid_BESS)) * grid_buy_price_param * delta_t) - \
+          cp.sum(pv_power_param) * lcoe_pv_param * delta_t - \
+          cp.sum((P_BESS_consumer + cp.pos(P_BESS_grid)) * lcoe_bess_param * delta_t)
 
 # Define and solve the problem
 prob = cp.Problem(cp.Maximize(revenue), constraints)

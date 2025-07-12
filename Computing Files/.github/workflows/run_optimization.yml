@@ -1,1 +1,41 @@
+name: Run Energy Optimization
 
+on:
+  push:
+    branches:
+      - main  # This workflow will run when changes are pushed to the 'main' branch
+
+  workflow_dispatch: # This allows you to manually trigger the workflow from the GitHub Actions UI
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4 # Action to check out your repository's code
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10' # Specify the Python version you want to use (e.g., '3.8', '3.9', '3.10', '3.11')
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+      working-directory: './V1_First_Model/Computing Files' # Important: Run pip install from the directory containing requirements.txt
+
+    - name: Run Optimization Script
+      run: python Optimization.py
+      working-directory: './V1_First_Model/Computing Files' # Important: Run the script from its directory
+
+    - name: Upload Plot Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: optimization-plots
+        path: |
+          ./V1_First_Model/Computing Files/*.png
+          ./V1_First_Model/Computing Files/*.jpg
+          ./V1_First_Model/Computing Files/*.pdf
+        if-no-files-found: ignore # Don't fail the workflow if no plots are generated (e.g., if the script fails before plotting)

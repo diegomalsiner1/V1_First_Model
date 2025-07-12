@@ -45,8 +45,8 @@ def load_data():
             consumer_demand[i] += 50.0  # Add 500 kW step
 
     # Sample grid prices ($/kWh): higher buy price during peak hours
-    grid_buy_price = np.full(n_steps, 0.15)
-    grid_sell_price = np.full(n_steps, 0.08)
+    grid_buy_price = np.full(n_steps, 0.12)
+    grid_sell_price = np.full(n_steps, 0.12)
     for i, t in enumerate(time_steps):
         if 17 <= t <= 21:
             grid_buy_price[i] = 0.12

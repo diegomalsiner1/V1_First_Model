@@ -12,16 +12,19 @@ delta_t = 0.25  # hours
 time_indices = range(n_steps)
 
 def load_data():
+    # Debug: Print file content
+    with open('../Input Data Files/Constants_Plant.csv', 'r') as file:
+        print("Constants_Plant.csv content:", file.read())
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
-    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv')
+    pv_lcoe_data = pd.read_csv('../Input Data Files/PV_LCOE.csv', comment='#')
     lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]  # 0.055 EUR/kWh
 
-    # Load LCOE for BESS from BESS_LCOE.csv (no header), ignoring comment lines
-    bess_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/BESS_LCOE.csv')
-    lcoe_bess = float(bess_lcoe_data.iloc[0][0])  # 0.08 EUR/kWh
+    # Load LCOE for BESS from BESS_LCOE.csv, ignoring comment lines
+    bess_lcoe_data = pd.read_csv('../Input Data Files/BESS_LCOE.csv', comment='#')
+    lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]  # 0.08 EUR/kWh
 
     # Load constants from Constants_Plant.csv
-    constants_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/Constants_Plant.csv')
+    constants_data = pd.read_csv('../Input Data Files/Constants_Plant.csv')
     bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])  # 4000 kWh
     bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])  # 92 kW
     eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])  # 0.984
@@ -36,7 +39,7 @@ def load_data():
             pv_power[i] = 2327 * np.sin(np.pi * (t - 6) / 12)
 
     # Sample consumer demand (kW): constant load of 200 kW with 500 kW step from 8 AM to 6 PM
-    consumer_demand = np.full(n_steps, 200.0)  # Baseline constant load of 200 kW
+    consumer_demand = np.full(n_steps, 200.0)  # Baseline constant load of 200 kWh
     for i, t in enumerate(time_steps):
         if 8 <= t <= 18:  # 8:00 to 18:00
             consumer_demand[i] += 500.0  # Add 500 kW step

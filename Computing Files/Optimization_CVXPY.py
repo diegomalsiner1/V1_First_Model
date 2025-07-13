@@ -65,16 +65,17 @@ P_BESS_grid = cp.Variable(n_steps, nonneg=True)
 P_grid_consumer = cp.Variable(n_steps, nonneg=True)
 P_grid_BESS = cp.Variable(n_steps, nonneg=True)
 SOC = cp.Variable(n_steps + 1, nonneg=True)
+slack = cp.Variable(n_steps, nonneg=True)  # Slack for consumer balance
 
 b_charge = cp.Variable(n_steps, boolean=True)
 b_discharge = cp.Variable(n_steps, boolean=True)
-b_grid_buy = cp.Variable(n_steps, boolean=True)
 b_grid_sell = cp.Variable(n_steps, boolean=True)
 
 # Constraints
 constraints = []
-# Consumer balance (relaxed to <=)
-constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] <= consumer_demand[t] for t in time_indices]
+# Consumer balance with slack
+constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] + slack[t] == consumer_demand[t]
+                for t in time_indices]
 # PV allocation
 constraints += [P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t] for t in time_indices]
 # BESS constraints
@@ -87,20 +88,20 @@ for t in time_indices:
 # Grid constraints
 for t in time_indices:
     constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t]]
-    # Commented out to allow unlimited grid purchases
-    # constraints += [P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t]]
 # SOC dynamics
 constraints += [SOC[0] == soc_initial]
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
                 (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)]
 constraints += [SOC[t] <= bess_capacity for t in range(n_steps + 1)]
-constraints += [SOC[t] >= 0 for t in range(n_steps + 1)]  # Explicit non-negativity
+constraints += [SOC[t] >= 0 for t in range(n_steps + 1)]
 
-# Objective: Maximize net revenue
+# Objective: Maximize net revenue with penalties
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
            cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
            cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) -
-           cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, lcoe_bess) * delta_t))
+           cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, lcoe_bess) * delta_t) -
+           1e3 * cp.sum(slack) -  # Penalty for unmet demand
+           0.01 * cp.sum(P_BESS_consumer + P_BESS_grid))  # Penalty for BESS discharge
 objective = cp.Maximize(revenue)
 
 # Problem
@@ -119,6 +120,7 @@ if problem.status == cp.OPTIMAL:
     P_grid_consumer_vals = P_grid_consumer.value
     P_grid_BESS_vals = P_grid_BESS.value
     SOC_vals = SOC.value
+    slack_vals = slack.value
 
     # Compute BESS charge and discharge powers
     P_BESS_charge = P_PV_BESS_vals + P_grid_BESS_vals
@@ -142,12 +144,10 @@ if problem.status == cp.OPTIMAL:
     print(f"Total Revenue: ${total_revenue:.2f}")
 
     # Check for unmet demand
-    unmet_demand = [consumer_demand[t] - (P_PV_consumer_vals[t] + P_BESS_consumer_vals[t] + P_grid_consumer_vals[t])
-                    for t in time_indices]
     print("Time steps with unmet demand (kW):")
     for t in time_indices:
-        if unmet_demand[t] > 1e-6:  # Small tolerance for numerical errors
-            print(f"Time {time_steps[t]:.2f}h: Unmet demand = {unmet_demand[t]:.2f} kW")
+        if slack_vals[t] > 1e-6:  # Small tolerance for numerical errors
+            print(f"Time {time_steps[t]:.2f}h: Unmet demand = {slack_vals[t]:.2f} kW")
 
     # Plotting critical parameters
     plt.figure(figsize=(12, 20))  # Increased height for 5 subplots
@@ -163,9 +163,9 @@ if problem.status == cp.OPTIMAL:
 
     # Graph 2: Consumer Energy Composition
     plt.subplot(5, 1, 2)
-    plt.stackplot(time_steps, P_PV_consumer_vals, P_BESS_consumer_vals, P_grid_consumer_vals,
-                  labels=['PV to Consumer', 'BESS to Consumer', 'Grid to Consumer'],
-                  colors=['orange', 'green', 'blue'])
+    plt.stackplot(time_steps, P_PV_consumer_vals, P_BESS_consumer_vals, P_grid_consumer_vals, slack_vals,
+                  labels=['PV to Consumer', 'BESS to Consumer', 'Grid to Consumer', 'Unmet Demand'],
+                  colors=['orange', 'green', 'blue', 'red'])
     plt.plot(time_steps, consumer_demand, label='Demand', color='black', linestyle='--')
     plt.xlabel('Time (hours)')
     plt.ylabel('Power (kW)')
@@ -233,12 +233,12 @@ else:
     print(f"BESS Power Limit: {bess_power_limit:.2f} kW")
     non_pv_demand = sum(consumer_demand[t] for t in time_indices if time_steps[t] < 5 or time_steps[t] > 19) * delta_t
     print(f"Demand during non-PV hours (0-5h, 19-24h): {non_pv_demand:.2f} kWh")
-    # Check SOC feasibility
+    # Check SOC feasibility (simplified)
     print("Checking SOC feasibility (simplified):")
     soc = soc_initial
     for t in time_indices:
-        charge = min(bess_power_limit, pv_power[t]) * eta_charge * delta_t  # Max possible charge
-        discharge = min(bess_power_limit, consumer_demand[t]) / eta_discharge * delta_t  # Max possible discharge
+        charge = min(bess_power_limit, pv_power[t]) * eta_charge * delta_t
+        discharge = min(bess_power_limit, consumer_demand[t]) / eta_discharge * delta_t
         soc += charge - discharge
         if soc < 0:
             print(f"Time {time_steps[t]:.2f}h: SOC would be negative ({soc:.2f} kWh)")

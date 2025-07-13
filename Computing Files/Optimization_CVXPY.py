@@ -73,13 +73,16 @@ b_grid_sell = cp.Variable(n_steps, boolean=True)
 
 # Constraints
 constraints = []
+
 # Consumer balance
 #SIMPLIFIED TO ENSURE FEASABILITY
 constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] <= consumer_demand[t] for t in time_indices]
 #EQUAL ENERGY BALANCE: 
 #constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand[t] for t in time_indices]
+
 # PV allocation
 constraints += [P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t] for t in time_indices]
+
 # BESS constraints
 for t in time_indices:
     constraints += [P_PV_BESS[t] + P_grid_BESS[t] <= bess_power_limit,
@@ -90,7 +93,8 @@ for t in time_indices:
 # Grid constraints
 for t in time_indices:
     constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t],
-                    P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t]]
+                #REMOVED FOR BIG M RELAXATION
+                #P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t]]
     # Commented out to allow simultaneous buying and selling
     # constraints += [b_grid_buy[t] + b_grid_sell[t] <= 1]
 # SOC dynamics

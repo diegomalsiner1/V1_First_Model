@@ -105,8 +105,11 @@ objective = cp.Maximize(revenue)
 
 # Problem
 problem = cp.Problem(objective, constraints)
-#problem.solve(solver=cp.CBC, verbose=True)
-problem.solve(solver=cp.GLPK_MI, verbose=True)
+#CVXPY
+problem.solve(solver=cp.CBC, verbose=True)
+#ADVANCED
+#problem.solve(solver=cp.GLPK_MI, verbose=True)
+
 # Check status
 print("Status:", problem.status)
 if problem.status == cp.OPTIMAL:

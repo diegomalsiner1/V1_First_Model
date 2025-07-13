@@ -1,10 +1,8 @@
-import pandas as pd
-import numpy as np
-from pulp import LpProblem, LpVariable, lpSum, LpMaximize, LpStatus
-import matplotlib.pyplot as plt
-import os
 
-print("--- Running the REAL Optimization Script ---")
+import cvxpy as cp
+import numpy as np
+
+print("--- Running the REAL Optimization Script using CVXPY ---")
 
 # Time framework: 24 hours, 15-minute intervals (96 steps)
 time_steps = np.arange(0, 24, 0.25)
@@ -51,131 +49,70 @@ def load_data():
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
             eta_charge, eta_discharge, soc_initial, pi_consumer)
-    
-# Load data
+
+# Load data (same as your code)
 (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
  lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
  eta_charge, eta_discharge, soc_initial, pi_consumer) = load_data()
 
-# Set up optimization problem
-prob = LpProblem("Energy_Optimization", LpMaximize)
+n_steps = 96
+delta_t = 0.25
+t = range(n_steps)
 
-# Decision variables
-P_PV_consumer = LpVariable.dicts("P_PV_consumer", time_indices, lowBound=0)
-P_PV_BESS = LpVariable.dicts("P_PV_BESS", time_indices, lowBound=0)
-P_PV_grid = LpVariable.dicts("P_PV_grid", time_indices, lowBound=0)
-P_BESS_consumer = LpVariable.dicts("P_BESS_consumer", time_indices, lowBound=0)
-P_BESS_grid = LpVariable.dicts("P_BESS_grid", time_indices, lowBound=0)
-P_grid_consumer = LpVariable.dicts("P_grid_consumer", time_indices, lowBound=0)
-P_grid_BESS = LpVariable.dicts("P_grid_BESS", time_indices, lowBound=0)
-SOC = LpVariable.dicts("SOC", range(n_steps + 1), lowBound=0, upBound=bess_capacity)
+# Variables
+P_PV_consumer = cp.Variable(n_steps, nonneg=True)
+P_PV_BESS = cp.Variable(n_steps, nonneg=True)
+P_PV_grid = cp.Variable(n_steps, nonneg=True)
+P_BESS_consumer = cp.Variable(n_steps, nonneg=True)
+P_BESS_grid = cp.Variable(n_steps, nonneg=True)
+P_grid_consumer = cp.Variable(n_steps, nonneg=True)
+P_grid_BESS = cp.Variable(n_steps, nonneg=True)
+SOC = cp.Variable(n_steps + 1, nonneg=True)
 
-# Binary variables for mutual exclusivity
-b_charge = LpVariable.dicts("b_charge", time_indices, cat='Binary')
-b_discharge = LpVariable.dicts("b_discharge", time_indices, cat='Binary')
-b_grid_buy = LpVariable.dicts("b_grid_buy", time_indices, cat='Binary')
-b_grid_sell = LpVariable.dicts("b_grid_sell", time_indices, cat='Binary')
-
+b_charge = cp.Variable(n_steps, boolean=True)
+b_discharge = cp.Variable(n_steps, boolean=True)
+b_grid_buy = cp.Variable(n_steps, boolean=True)
+b_grid_sell = cp.Variable(n_steps, boolean=True)
 
 # Constraints
-# 1. Consumer energy balance
-for t in time_indices:
-    prob += P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand[t], f"Consumer_Balance_{t}"
+constraints = []
+# Consumer balance
+constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand[t] for t in t]
+# PV allocation
+constraints += [P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t] for t in t]
+# BESS constraints
+M = 1e6
+for t in t:
+    constraints += [P_PV_BESS[t] + P_grid_BESS[t] <= bess_power_limit,
+                    P_PV_BESS[t] + P_grid_BESS[t] <= M * b_charge[t],
+                    P_BESS_consumer[t] + P_BESS_grid[t] <= bess_power_limit,
+                    P_BESS_consumer[t] + P_BESS_grid[t] <= M * b_discharge[t],
+                    b_charge[t] + b_discharge[t] <= 1]
+# Grid constraints
+for t in t:
+    constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t],
+                    P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t],
+                    b_grid_buy[t] + b_grid_sell[t] <= 1]
+# SOC dynamics
+constraints += [SOC[0] == soc_initial]
+constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
+                (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)]
+constraints += [SOC[t] <= bess_capacity for t in range(n_steps + 1)]
 
-# 2. PV power allocation
-for t in time_indices:
-    prob += P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t], f"PV_Allocation_{t}"
+# Objective
+revenue = (cp.sum(consumer_demand * pi_consumer * delta_t) +
+           cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
+           cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) -
+           cp.sum(pv_power * lcoe_pv * delta_t) -
+           cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, lcoe_bess) * delta_t))
+objective = cp.Maximize(revenue)
 
-# 3. BESS power limits and mutual exclusivity (Big-M method)
-for t in time_indices:
-    # Total power into BESS
-    prob += P_PV_BESS[t] + P_grid_BESS[t] <= bess_power_limit, f"BESS_Charge_Limit_{t}"
-    prob += P_PV_BESS[t] + P_grid_BESS[t] <= M * b_charge[t], f"BESS_Charge_Binary_Link_{t}"
-
-    # Total power out of BESS
-    prob += P_BESS_consumer[t] + P_BESS_grid[t] <= bess_power_limit, f"BESS_Discharge_Limit_{t}"
-    prob += P_BESS_consumer[t] + P_BESS_grid[t] <= M * b_discharge[t], f"BESS_Discharge_Binary_Link_{t}"
-
-    # Mutual exclusivity: cannot charge and discharge simultaneously
-    prob += b_charge[t] + b_discharge[t] <= 1, f"BESS_Mutual_Exclusivity_{t}"
-
-# 4. Grid power limits and mutual exclusivity (Big-M method)
-for t in time_indices:
-    # Power sold to grid
-    prob += P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t], f"Grid_Sell_Binary_Link_{t}"
-    
-    # Power bought from grid
-    prob += P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t], f"Grid_Buy_Binary_Link_{t}"
-
-    # Mutual exclusivity: cannot buy and sell from grid simultaneously
-    prob += b_grid_buy[t] + b_grid_sell[t] <= 1, f"Grid_Mutual_Exclusivity_{t}"
+# Problem
+problem = cp.Problem(objective, constraints)
+problem.solve(solver=cp.CBC, verbose=True)
 
 
-# 5. BESS SOC dynamics
-prob += SOC[0] == soc_initial, "Initial_SOC" # Initial SOC
-for t in range(n_steps):
-    prob += SOC[t + 1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t - \
-                        (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t, f"SOC_Dynamics_{t}"
-
-# 6. SOC bounds
-for t in range(n_steps + 1):
-    prob += SOC[t] >= 0, f"SOC_Lower_Bound_{t}"
-    prob += SOC[t] <= bess_capacity, f"SOC_Upper_Bound_{t}"
-
-# Objective function: Maximize revenue
-# Calculate constant parts of the objective separately
-constant_consumer_revenue = sum(consumer_demand[t] * pi_consumer * delta_t for t in time_indices)
-constant_pv_cost = sum(pv_power[t] * lcoe_pv * delta_t for t in time_indices)
-
-# Define the variable parts of the objective using lpSum
-grid_sell_revenue_expr = lpSum([(P_PV_grid[t] + P_BESS_grid[t]) * grid_sell_price[t] * delta_t for t in time_indices])
-grid_buy_cost_expr = lpSum([(P_grid_consumer[t] + P_grid_BESS[t]) * grid_buy_price[t] * delta_t for t in time_indices])
-bess_discharge_cost_expr = lpSum([(P_BESS_consumer[t] + P_BESS_grid[t]) * lcoe_bess * delta_t for t in time_indices])
-
-# Combine all parts into the objective function
-prob += constant_consumer_revenue + grid_sell_revenue_expr - grid_buy_cost_expr - constant_pv_cost - bess_discharge_cost_expr
-
-# Solve the problem
-# PuLP will automatically choose a suitable MILP solver (like CBC or GLPK if installed)
-prob.solve()
-
-# Output results
-print("Status:", LpStatus[prob.status])
-
-if LpStatus[prob.status] == "Optimal":
-    # Extract variable values
-    P_PV_consumer_vals = [P_PV_consumer[t].varValue for t in time_indices]
-    P_PV_BESS_vals = [P_PV_BESS[t].varValue for t in time_indices]
-    P_PV_grid_vals = [P_PV_grid[t].varValue for t in time_indices]
-    P_BESS_consumer_vals = [P_BESS_consumer[t].varValue for t in time_indices]
-    P_BESS_grid_vals = [P_BESS_grid[t].varValue for t in time_indices]
-    P_grid_consumer_vals = [P_grid_consumer[t].varValue for t in time_indices]
-    P_grid_BESS_vals = [P_grid_BESS[t].varValue for t in time_indices]
-    SOC_vals = [SOC[t].varValue for t in range(n_steps + 1)]
-
-    # Compute BESS charge and discharge powers (now consistent with binary constraints)
-    P_BESS_charge = [P_PV_BESS_vals[t] + P_grid_BESS_vals[t] for t in time_indices]
-    P_BESS_discharge = [P_BESS_consumer_vals[t] + P_BESS_grid_vals[t] for t in time_indices]
-
-    # Compute Grid sold and bought powers (now consistent with binary constraints)
-    P_grid_sold = [P_PV_grid_vals[t] + P_BESS_grid_vals[t] for t in time_indices]
-    P_grid_bought = [P_grid_consumer_vals[t] + P_grid_BESS_vals[t] for t in time_indices]
-
-    # Compute revenue per time step
-    revenue_per_step = []
-    for t in time_indices:
-        rev_consumer = consumer_demand[t] * pi_consumer * delta_t
-        rev_grid = P_grid_sold[t] * grid_sell_price[t] * delta_t
-        cost_grid = P_grid_bought[t] * grid_buy_price[t] * delta_t
-        cost_pv = pv_power[t] * lcoe_pv * delta_t
-        cost_bess = P_BESS_discharge[t] * lcoe_bess * delta_t
-        net_rev = rev_consumer + rev_grid - cost_grid - cost_pv - cost_bess
-        revenue_per_step.append(net_rev)
-
-    total_revenue = sum(revenue_per_step)
-    print(f"Total Revenue: ${total_revenue:.2f}")
-
-    # Plotting critical parameters
+ # Plotting critical parameters
     plt.figure(figsize=(12, 20))  # Increased height for 5 subplots
 
     # Graph 1: PV Production
@@ -244,8 +181,10 @@ if LpStatus[prob.status] == "Optimal":
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     plt.savefig(os.path.join(output_dir, 'optimization_results_plots.png'))
-    # plt.show()  # Uncomment if you want to display during execution
+
+# Check status
+print("Status:", problem.status)
+if problem.status == "optimal":
+    print("Optimal Revenue:", problem.value)
 else:
-    print("Optimization did not converge to an optimal solution.")
-
-
+    print("Check constraints/data for infeasibility.")

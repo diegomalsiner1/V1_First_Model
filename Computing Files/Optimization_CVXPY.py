@@ -73,16 +73,10 @@ b_grid_sell = cp.Variable(n_steps, boolean=True)
 
 # Constraints
 constraints = []
-
-# Consumer balance
-#SIMPLIFIED TO ENSURE FEASABILITY
+# Consumer balance (relaxed to <=)
 constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] <= consumer_demand[t] for t in time_indices]
-#EQUAL ENERGY BALANCE: 
-#constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand[t] for t in time_indices]
-
 # PV allocation
 constraints += [P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t] for t in time_indices]
-
 # BESS constraints
 for t in time_indices:
     constraints += [P_PV_BESS[t] + P_grid_BESS[t] <= bess_power_limit,
@@ -90,19 +84,17 @@ for t in time_indices:
                     P_BESS_consumer[t] + P_BESS_grid[t] <= bess_power_limit,
                     P_BESS_consumer[t] + P_BESS_grid[t] <= M * b_discharge[t],
                     b_charge[t] + b_discharge[t] <= 1]
-
-# Grid constraints          ALL BIG M WEG 
-    #for t in time_indices:
-    #constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t],
-                #REMOVED FOR BIG M RELAXATION
-                #P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t]]
-    # Commented out to allow simultaneous buying and selling
-    # constraints += [b_grid_buy[t] + b_grid_sell[t] <= 1]
+# Grid constraints
+for t in time_indices:
+    constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t]]
+    # Commented out to allow unlimited grid purchases
+    # constraints += [P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t]]
 # SOC dynamics
 constraints += [SOC[0] == soc_initial]
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
                 (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)]
 constraints += [SOC[t] <= bess_capacity for t in range(n_steps + 1)]
+constraints += [SOC[t] >= 0 for t in range(n_steps + 1)]  # Explicit non-negativity
 
 # Objective: Maximize net revenue
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
@@ -149,6 +141,14 @@ if problem.status == cp.OPTIMAL:
     total_revenue = sum(revenue_per_step)
     print(f"Total Revenue: ${total_revenue:.2f}")
 
+    # Check for unmet demand
+    unmet_demand = [consumer_demand[t] - (P_PV_consumer_vals[t] + P_BESS_consumer_vals[t] + P_grid_consumer_vals[t])
+                    for t in time_indices]
+    print("Time steps with unmet demand (kW):")
+    for t in time_indices:
+        if unmet_demand[t] > 1e-6:  # Small tolerance for numerical errors
+            print(f"Time {time_steps[t]:.2f}h: Unmet demand = {unmet_demand[t]:.2f} kW")
+
     # Plotting critical parameters
     plt.figure(figsize=(12, 20))  # Increased height for 5 subplots
 
@@ -166,6 +166,7 @@ if problem.status == cp.OPTIMAL:
     plt.stackplot(time_steps, P_PV_consumer_vals, P_BESS_consumer_vals, P_grid_consumer_vals,
                   labels=['PV to Consumer', 'BESS to Consumer', 'Grid to Consumer'],
                   colors=['orange', 'green', 'blue'])
+    plt.plot(time_steps, consumer_demand, label='Demand', color='black', linestyle='--')
     plt.xlabel('Time (hours)')
     plt.ylabel('Power (kW)')
     plt.title('Consumer Energy Composition')
@@ -230,6 +231,15 @@ else:
     print(f"Initial BESS SOC: {soc_initial:.2f} kWh")
     print(f"BESS Capacity: {bess_capacity:.2f} kWh")
     print(f"BESS Power Limit: {bess_power_limit:.2f} kW")
-    # Check periods without PV
     non_pv_demand = sum(consumer_demand[t] for t in time_indices if time_steps[t] < 5 or time_steps[t] > 19) * delta_t
     print(f"Demand during non-PV hours (0-5h, 19-24h): {non_pv_demand:.2f} kWh")
+    # Check SOC feasibility
+    print("Checking SOC feasibility (simplified):")
+    soc = soc_initial
+    for t in time_indices:
+        charge = min(bess_power_limit, pv_power[t]) * eta_charge * delta_t  # Max possible charge
+        discharge = min(bess_power_limit, consumer_demand[t]) / eta_discharge * delta_t  # Max possible discharge
+        soc += charge - discharge
+        if soc < 0:
+            print(f"Time {time_steps[t]:.2f}h: SOC would be negative ({soc:.2f} kWh)")
+        soc = min(soc, bess_capacity)

@@ -90,9 +90,10 @@ for t in time_indices:
                     P_BESS_consumer[t] + P_BESS_grid[t] <= bess_power_limit,
                     P_BESS_consumer[t] + P_BESS_grid[t] <= M * b_discharge[t],
                     b_charge[t] + b_discharge[t] <= 1]
-# Grid constraints
-for t in time_indices:
-    constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t],
+
+# Grid constraints          ALL BIG M WEG 
+    #for t in time_indices:
+    #constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t],
                 #REMOVED FOR BIG M RELAXATION
                 #P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t]]
     # Commented out to allow simultaneous buying and selling

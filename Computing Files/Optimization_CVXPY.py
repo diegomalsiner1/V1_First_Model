@@ -73,7 +73,7 @@ b_grid_sell = cp.Variable(n_steps, boolean=True)
 
 # Constraints
 constraints = []
-# Consumer balance with slack
+# Consumer balance with slack (equality)
 constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] + slack[t] == consumer_demand[t]
                 for t in time_indices]
 # PV allocation
@@ -93,15 +93,14 @@ constraints += [SOC[0] == soc_initial]
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
                 (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)]
 constraints += [SOC[t] <= bess_capacity for t in range(n_steps + 1)]
-constraints += [SOC[t] >= 0 for t in range(n_steps + 1)]
+constraints += [SOC[t] >= 0.1 * bess_capacity for t in range(n_steps + 1)]  # Minimum SOC constraint
 
-# Objective: Maximize net revenue with penalties
+# Objective: Maximize net revenue with slack penalty
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
            cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
            cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) -
            cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, lcoe_bess) * delta_t) -
-           1e3 * cp.sum(slack) -  # Penalty for unmet demand
-           0.01 * cp.sum(P_BESS_consumer + P_BESS_grid))  # Penalty for BESS discharge
+           1e3 * cp.sum(slack))  # Penalty for unmet demand
 objective = cp.Maximize(revenue)
 
 # Problem
@@ -240,6 +239,6 @@ else:
         charge = min(bess_power_limit, pv_power[t]) * eta_charge * delta_t
         discharge = min(bess_power_limit, consumer_demand[t]) / eta_discharge * delta_t
         soc += charge - discharge
-        if soc < 0:
-            print(f"Time {time_steps[t]:.2f}h: SOC would be negative ({soc:.2f} kWh)")
+        if soc < 0.1 * bess_capacity:
+            print(f"Time {time_steps[t]:.2f}h: SOC below minimum ({soc:.2f} kWh < {0.1 * bess_capacity:.2f} kWh)")
         soc = min(soc, bess_capacity)

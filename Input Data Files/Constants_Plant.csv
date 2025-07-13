@@ -3,5 +3,5 @@ BESS_Capacity,1500
 BESS_Power_Limit,100
 BESS_Efficiency_Charge,0.984
 BESS_Efficiency_Discharge,0.984
-SOC_Initial, 1000
+SOC_Initial, 1500
 Consumer_Price,0.12

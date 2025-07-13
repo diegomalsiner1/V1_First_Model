@@ -113,7 +113,7 @@ problem.solve(solver=cp.CBC, verbose=True)
 
 
  # Plotting critical parameters
-    plt.figure(figsize=(12, 20))  # Increased height for 5 subplots
+    plt.figure(figsize=(20, 20))  # Increased height for 5 subplots
 
     # Graph 1: PV Production
     plt.subplot(5, 1, 1)

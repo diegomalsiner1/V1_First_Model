@@ -100,7 +100,7 @@ revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t
            cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
            cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) -
            cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, lcoe_bess) * delta_t) -
-           1e3 * cp.sum(slack))  # Penalty for unmet demand
+           1e5 * cp.sum(slack))  # Penalty for unmet demand
 objective = cp.Maximize(revenue)
 
 # Problem

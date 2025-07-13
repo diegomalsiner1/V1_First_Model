@@ -74,7 +74,10 @@ b_grid_sell = cp.Variable(n_steps, boolean=True)
 # Constraints
 constraints = []
 # Consumer balance
-constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand[t] for t in time_indices]
+#SIMPLIFIED TO ENSURE FEASABILITY
+constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] <= consumer_demand[t] for t in time_indices]
+#EQUAL ENERGY BALANCE: 
+#constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] == consumer_demand[t] for t in time_indices]
 # PV allocation
 constraints += [P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t] for t in time_indices]
 # BESS constraints

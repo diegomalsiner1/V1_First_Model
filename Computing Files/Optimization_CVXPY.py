@@ -1,8 +1,8 @@
-import cvxpy as cp
 import numpy as np
 import pandas as pd
-import os
+import cvxpy as cp
 import matplotlib.pyplot as plt
+import os
 
 print("--- Running the REAL Optimization Script using CVXPY ---")
 
@@ -11,7 +11,7 @@ time_steps = np.arange(0, 24, 0.25)
 n_steps = len(time_steps)
 delta_t = 0.25  # hours
 time_indices = range(n_steps)
-M = 1e6  # A large constant for Big-M method
+M = 1e6  # Big-M constant
 
 def load_data():
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
@@ -96,11 +96,10 @@ constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]
 constraints += [SOC[t] <= bess_capacity for t in range(n_steps + 1)]
 
 # Objective: Maximize net revenue
-revenue = (cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
+revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
+           cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
            cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) -
-           cp.sum(pv_power * lcoe_pv * delta_t) -
            cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, lcoe_bess) * delta_t))
-
 objective = cp.Maximize(revenue)
 
 # Problem
@@ -109,28 +108,37 @@ problem.solve(solver=cp.CBC, verbose=True)
 
 # Check status
 print("Status:", problem.status)
-if problem.status == "optimal":
-    print("Optimal Revenue:", problem.value)
-    
+if problem.status == cp.OPTIMAL:
     # Extract values for plotting
     P_PV_consumer_vals = P_PV_consumer.value
+    P_PV_BESS_vals = P_PV_BESS.value
+    P_PV_grid_vals = P_PV_grid.value
     P_BESS_consumer_vals = P_BESS_consumer.value
+    P_BESS_grid_vals = P_BESS_grid.value
     P_grid_consumer_vals = P_grid_consumer.value
-    P_BESS_charge = P_PV_BESS.value + P_grid_BESS.value
-    P_BESS_discharge = P_BESS_consumer.value + P_BESS_grid.value
-    P_grid_sold = P_PV_grid.value + P_BESS_grid.value
-    P_grid_bought = P_grid_consumer.value + P_grid_BESS.value
+    P_grid_BESS_vals = P_grid_BESS.value
     SOC_vals = SOC.value
 
-    # Compute revenue per step for plotting
+    # Compute BESS charge and discharge powers
+    P_BESS_charge = P_PV_BESS_vals + P_grid_BESS_vals
+    P_BESS_discharge = P_BESS_consumer_vals + P_BESS_grid_vals
+
+    # Compute Grid sold and bought powers
+    P_grid_sold = P_PV_grid_vals + P_BESS_grid_vals
+    P_grid_bought = P_grid_consumer_vals + P_grid_BESS_vals
+
+    # Compute revenue per time step for plotting
     revenue_per_step = []
     for t in time_indices:
-        rev_grid = (P_PV_grid.value[t] + P_BESS_grid.value[t]) * grid_sell_price[t] * delta_t
-        cost_grid = (P_grid_consumer.value[t] + P_grid_BESS.value[t]) * grid_buy_price[t] * delta_t
-        cost_pv = pv_power[t] * lcoe_pv * delta_t
-        cost_bess = (P_BESS_consumer.value[t] + P_BESS_grid.value[t]) * lcoe_bess * delta_t
-        net_rev = rev_grid - cost_grid - cost_pv - cost_bess
+        rev_pv_consumer = P_PV_consumer_vals[t] * (grid_buy_price[t] - lcoe_pv) * delta_t
+        rev_grid = (P_PV_grid_vals[t] + P_BESS_grid_vals[t]) * grid_sell_price[t] * delta_t
+        cost_grid = (P_grid_consumer_vals[t] + P_grid_BESS_vals[t]) * grid_buy_price[t] * delta_t
+        cost_bess = (P_BESS_consumer_vals[t] + P_BESS_grid_vals[t]) * lcoe_bess * delta_t
+        net_rev = rev_pv_consumer + rev_grid - cost_grid - cost_bess
         revenue_per_step.append(net_rev)
+
+    total_revenue = sum(revenue_per_step)
+    print(f"Total Revenue: ${total_revenue:.2f}")
 
     # Plotting critical parameters
     plt.figure(figsize=(12, 20))  # Increased height for 5 subplots
@@ -203,4 +211,13 @@ if problem.status == "optimal":
     plt.savefig(os.path.join(output_dir, 'optimization_results_plots.png'))
     plt.show()
 else:
+    print("Optimization failed. Status:", problem.status)
     print("Check constraints/data for infeasibility.")
+    # Diagnostic: Check consumer balance feasibility
+    total_demand = sum(consumer_demand) * delta_t
+    total_pv = sum(pv_power) * delta_t
+    print(f"Total Consumer Demand: {total_demand:.2f} kWh")
+    print(f"Total PV Generation: {total_pv:.2f} kWh")
+    print(f"Initial BESS SOC: {soc_initial:.2f} kWh")
+    print(f"BESS Capacity: {bess_capacity:.2f} kWh")
+    print(f"BESS Power Limit: {bess_power_limit:.2f} kW")

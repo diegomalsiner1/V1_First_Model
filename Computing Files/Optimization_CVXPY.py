@@ -87,8 +87,9 @@ for t in time_indices:
 # Grid constraints
 for t in time_indices:
     constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t],
-                    P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t],
-                    b_grid_buy[t] + b_grid_sell[t] <= 1]
+                    P_grid_consumer[t] + P_grid_BESS[t] <= M * b_grid_buy[t]]
+    # Commented out to allow simultaneous buying and selling
+    # constraints += [b_grid_buy[t] + b_grid_sell[t] <= 1]
 # SOC dynamics
 constraints += [SOC[0] == soc_initial]
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
@@ -221,3 +222,6 @@ else:
     print(f"Initial BESS SOC: {soc_initial:.2f} kWh")
     print(f"BESS Capacity: {bess_capacity:.2f} kWh")
     print(f"BESS Power Limit: {bess_power_limit:.2f} kW")
+    # Check periods without PV
+    non_pv_demand = sum(consumer_demand[t] for t in time_indices if time_steps[t] < 5 or time_steps[t] > 19) * delta_t
+    print(f"Demand during non-PV hours (0-5h, 19-24h): {non_pv_demand:.2f} kWh")

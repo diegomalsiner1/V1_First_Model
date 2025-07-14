@@ -39,9 +39,9 @@ def load_data():
 
     # Sample consumer demand (kW): constant load of 50 kW with 50 kW step from 8 AM to 6 PM
     consumer_demand = np.full(n_steps, 70.0)
-    #for i, t in enumerate(time_steps):
-    #    if 8 <= t <= 18:
-    #        consumer_demand[i] += 50.0
+    for i, t in enumerate(time_steps):
+        if 8 <= t <= 18:
+            consumer_demand[i] += 50.0
 
     # Sample grid prices ($/kWh): constant at 0.12
     grid_buy_price = np.full(n_steps, 0.12)

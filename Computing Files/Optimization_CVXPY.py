@@ -242,8 +242,10 @@ if problem.status == cp.OPTIMAL:
     ax2.set_ylabel('Cumulative Revenue ($)')
     ax2.legend(loc='upper right')
 
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(file)), '..', 'Output Files')
+   plt.tight_layout()
+    # Save first image
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, 'Financial_Metrics.png'))
+    plt.savefig(os.path.join(output_dir, 'Financials.png'))
     plt.show()

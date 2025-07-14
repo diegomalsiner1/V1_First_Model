@@ -11,7 +11,6 @@ time_steps = np.arange(0, 24, 0.25)
 n_steps = len(time_steps)
 delta_t = 0.25  # hours
 time_indices = range(n_steps)
-M = 1e6  # Big-M constant
 
 def load_data():
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
@@ -37,16 +36,27 @@ def load_data():
         if 5 <= t <= 19:
             pv_power[i] = 100 * np.sin(np.pi * (t - 6) / 12)
 
-    # Sample consumer demand (kW): constant load of 50 kW with 50 kW step from 8 AM to 6 PM
-    consumer_demand = np.full(n_steps, 70.0)
+    # Consumer demand (kW): constant 50 kW, 150 kW from 8-18h, with 2h ramps from 6-8h and 18-20h
+    consumer_demand = np.full(n_steps, 50.0)
     for i, t in enumerate(time_steps):
-        if 8 <= t <= 18:
-            consumer_demand[i] += 50.0
+        if 6 <= t < 8:
+            consumer_demand[i] += 50.0 * (t - 6) / 2  # Ramp up from 50 to 150 kW
+        elif 8 <= t <= 18:
+            consumer_demand[i] = 150.0
+        elif 18 < t <= 20:
+            consumer_demand[i] += 50.0 * (20 - t) / 2  # Ramp down from 150 to 50 kW
 
-    # Sample grid prices ($/kWh): constant at 0.12
-    grid_buy_price = np.full(n_steps, 0.12)
-    grid_sell_price = np.full(n_steps, 0.12)
-    
+    # Grid prices ($/kWh): Price[t] = 0.1 + rand(x) - 0.02 * sin((t) - y)
+    # y is phase shift so min at t=0, max at t=12, min at t=24
+    # sin(2πt/24 - y) = -1 at t=0, 1 at t=12, -1 at t=24
+    # At t=0: sin(-y) = -1 => -y = -π/2 => y = π/2
+    grid_price = np.zeros(n_steps)
+    for i, t in enumerate(time_steps):
+        x = np.random.uniform(-0.05, 0.1)
+        grid_price[i] = 0.1 + x - 0.02 * np.sin(2 * np.pi * t / 24 - np.pi / 2)
+    grid_buy_price = grid_price
+    grid_sell_price = grid_price  # Assuming buy and sell prices are the same
+
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
             eta_charge, eta_discharge, soc_initial, pi_consumer)
@@ -67,10 +77,6 @@ P_grid_BESS = cp.Variable(n_steps, nonneg=True)
 SOC = cp.Variable(n_steps + 1, nonneg=True)
 slack = cp.Variable(n_steps, nonneg=True)  # Slack for consumer balance
 
-b_charge = cp.Variable(n_steps, boolean=True)
-b_discharge = cp.Variable(n_steps, boolean=True)
-b_grid_sell = cp.Variable(n_steps, boolean=True)
-
 # Constraints
 constraints = []
 # Consumer balance with slack (equality)
@@ -81,13 +87,7 @@ constraints += [P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t] fo
 # BESS constraints
 for t in time_indices:
     constraints += [P_PV_BESS[t] + P_grid_BESS[t] <= bess_power_limit,
-                    P_PV_BESS[t] + P_grid_BESS[t] <= M * b_charge[t],
-                    P_BESS_consumer[t] + P_BESS_grid[t] <= bess_power_limit,
-                    P_BESS_consumer[t] + P_BESS_grid[t] <= M * b_discharge[t],
-                    b_charge[t] + b_discharge[t] <= 1]
-# Grid constraints
-for t in time_indices:
-    constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M * b_grid_sell[t]]
+                    P_BESS_consumer[t] + P_BESS_grid[t] <= bess_power_limit]
 # SOC dynamics
 constraints += [SOC[0] == soc_initial]
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
@@ -105,10 +105,7 @@ objective = cp.Maximize(revenue)
 
 # Problem
 problem = cp.Problem(objective, constraints)
-#CVXPY
 problem.solve(solver=cp.CBC, verbose=True)
-#ADVANCED
-#problem.solve(solver=cp.GLPK_MI, verbose=True)
 
 # Check status
 print("Status:", problem.status)

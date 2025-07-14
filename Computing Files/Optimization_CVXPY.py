@@ -4,6 +4,8 @@ import cvxpy as cp
 import matplotlib.pyplot as plt
 import os
 
+#test
+
 print("--- Running the REAL Optimization Script using CVXPY ---")
 
 # Time framework: 24 hours, 15-minute intervals (96 steps)

@@ -209,7 +209,7 @@ if problem.status == cp.OPTIMAL:
     plt.savefig(os.path.join(output_dir, 'Energy_Flows.png'))
     plt.show()
 
-    # Second Image: Financials
+        # Second Image: Financials
     plt.figure(figsize=(12, 10))  # Height for 2 subplots
 
     # Plot 1: Electricity Price
@@ -221,20 +221,29 @@ if problem.status == cp.OPTIMAL:
     plt.legend()
     plt.grid(True)
 
-    # Plot 2: Revenue Components
+    # Plot 2: Revenue Components with dual scales
     plt.subplot(2, 1, 2)
-    plt.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost ($)', color='green')
-    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Revenue ($)', color='cyan')
-    plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost ($)', color='red')
-    plt.plot(time_steps, cost_bess_per_step, label='BESS Cost ($)', color='magenta')
-    plt.plot(time_steps, penalty_per_step, label='Penalty ($)', color='black')
-    plt.plot(time_steps, total_net_per_step, label='Total Revenue ($)', color='purple')
-    plt.xlabel('Time (hours)')
-    plt.ylabel('Revenue Components ($ per step)')
-    plt.title('Revenue Components over Time')
-    plt.legend()
-    plt.grid(True)
+    ax1 = plt.gca()
+    ax1.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost ($)', color='green')
+    ax1.plot(time_steps, rev_sell_per_step, label='Grid Sell Revenue ($)', color='cyan')
+    ax1.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost ($)', color='red')
+    ax1.plot(time_steps, cost_bess_per_step, label='BESS Cost ($)', color='magenta')
+    ax1.plot(time_steps, penalty_per_step, label='Penalty ($)', color='black')
+    ax1.plot(time_steps, total_net_per_step, label='Total Revenue per Step ($)', color='purple')
+    ax1.set_xlabel('Time (hours)')
+    ax1.set_ylabel('Revenue/Cost per Step ($)')
+    ax1.set_title('Revenue Components over Time')
+    ax1.legend(loc='upper left')
+    ax1.grid(True)
 
-    plt.tight_layout()
+    ax2 = ax1.twinx()
+    cumulative_revenue = np.cumsum(total_net_per_step)
+    ax2.plot(time_steps, cumulative_revenue, label='Cumulative Revenue ($)', color='orange', linestyle='--')
+    ax2.set_ylabel('Cumulative Revenue ($)')
+    ax2.legend(loc='upper right')
+
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(file)), '..', 'Output Files')
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     plt.savefig(os.path.join(output_dir, 'Financial_Metrics.png'))
     plt.show()

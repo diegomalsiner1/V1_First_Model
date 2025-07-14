@@ -161,7 +161,7 @@ if problem.status == cp.OPTIMAL:
         if slack_vals[t] > 1e-6:  # Small tolerance for numerical errors
             print(f"Time {time_steps[t]:.2f}h: Unmet demand = {slack_vals[t]:.2f} kW")
 
-    # First Image: Energy Flows
+        # First Image: Energy Flows
     plt.figure(figsize=(12, 15))  # Height for 3 subplots
 
     # Plot 1: PV Production
@@ -203,10 +203,10 @@ if problem.status == cp.OPTIMAL:
 
     plt.tight_layout()
     # Save first image
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(file)), '..', 'Output Files')
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, 'energy_flows.png'))
+    plt.savefig(os.path.join(output_dir, 'Energy_Flows.png'))
     plt.show()
 
     # Second Image: Financials
@@ -236,28 +236,5 @@ if problem.status == cp.OPTIMAL:
     plt.grid(True)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'financials.png'))
+    plt.savefig(os.path.join(output_dir, 'Financial_Metrics.png'))
     plt.show()
-else:
-    print("Optimization failed. Status:", problem.status)
-    print("Check constraints/data for infeasibility.")
-    # Diagnostic: Check consumer balance feasibility
-    total_demand = sum(consumer_demand) * delta_t
-    total_pv = sum(pv_power) * delta_t
-    print(f"Total Consumer Demand: {total_demand:.2f} kWh")
-    print(f"Total PV Generation: {total_pv:.2f} kWh")
-    print(f"Initial BESS SOC: {soc_initial:.2f} kWh")
-    print(f"BESS Capacity: {bess_capacity:.2f} kWh")
-    print(f"BESS Power Limit: {bess_power_limit:.2f} kW")
-    non_pv_demand = sum(consumer_demand[t] for t in time_indices if time_steps[t] <5 or time_steps[t] >19) * delta_t
-    print(f"Demand during non-PV hours (0-5h, 19-24h): {non_pv_demand:.2f} kWh")
-    # Check SOC feasibility (simplified)
-    print("Checking SOC feasibility (simplified):")
-    soc = soc_initial
-    for t in time_indices:
-        charge = min(bess_power_limit, pv_power[t]) * eta_charge * delta_t
-        discharge = min(bess_power_limit, consumer_demand[t]) / eta_discharge * delta_t
-        soc += charge - discharge
-        if soc <0.1 * bess_capacity:
-            print(f"Time {time_steps[t]:.2f}h: SOC below minimum ({soc:.2f} kWh < {0.1 * bess_capacity:.2f} kWh")
-        soc = min(soc, bess_capacity) 

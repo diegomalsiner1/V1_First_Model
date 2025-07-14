@@ -228,7 +228,7 @@ if problem.status == cp.OPTIMAL:
     plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost ($)', color='red')
     plt.plot(time_steps, cost_bess_per_step, label='BESS Cost ($)', color='magenta')
     plt.plot(time_steps, penalty_per_step, label='Penalty ($)', color='black')
-    plt.plot(time_steps, total_net_per_step label='Total Revenue ($)', color='purple')
+    plt.plot(time_steps, total_net_per_step, label='Total Revenue ($)', color='purple')
     plt.xlabel('Time (hours)')
     plt.ylabel('Revenue Components ($ per step)')
     plt.title('Revenue Components over Time')

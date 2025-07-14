@@ -4,7 +4,7 @@ import cvxpy as cp
 import matplotlib.pyplot as plt
 import os
 
-#test
+
 
 print("--- Running the REAL Optimization Script using CVXPY ---")
 
@@ -36,28 +36,32 @@ def load_data():
     pv_power = np.zeros(n_steps)
     for i, t in enumerate(time_steps):
         if 6 <= t <=18:
-            pv_power[i] = 2327 * np.sin(np.pi * (t -6) / 12)
+            pv_power[i] = 1327 * np.sin(np.pi * (t -6) / 12)
 
     # Consumer demand (kW): constant 200 kW, 1300 kW from 8-18h, with 2h ramps from 6-8h and 18-20
-    consumer_demand = np.full(n_steps, 50.0)
+    consumer_demand = np.full(n_steps, 200.0)
     for i, t in enumerate(time_steps):
         if 6 <= t <8:
-            consumer_demand[i] += 1300.0 * (t -6) /2  # Ramp up from 50 to 150 kW
+            consumer_demand[i] += 1000.0 * (t -6) /2  # Ramp up from 50 to 150 kW
         elif 8 <= t <=16:
-            consumer_demand[i] = 1500.0
+            consumer_demand[i] = 1200.0
         elif 16 < t <=18:
-            consumer_demand[i] += 1300.0 * (18 - t) /2  # Ramp down from 150 to 50 kW
+            consumer_demand[i] += 1000.0 * (18 - t) /2  # Ramp down from 150 to 50 kW
 
     # Grid prices ($/kWh): Price[t] = 0.1 + rand(x) - 0.02 * sin((t) - y)
     # y is phase shift so min at t=0, max at t=12, min at t=24
     # sin(2πt/24 - y) = -1 at t=0, 1 at t=12, -1 at t=24
     # At t=0: sin(-y) = -1 => -y = -π/2 => y = π/2
+    
     grid_price = np.zeros(n_steps)
     for i, t in enumerate(time_steps):
-        x = np.random.uniform(-0.02,0.04)
-        grid_price[i] = 0.1 + x + 0.03 * np.sin(2 * np.pi * t /24 - np.pi /2)
-    grid_buy_price = grid_price + 0.01
-    grid_sell_price = grid_price  - 0.01 # SMALL DIFF FOR ANTI ARBITRAGE
+        x = np.random.uniform(-0.01,0.01)
+        grid_price[i] = 0.1 + x + 0.01 * np.sin(2 * np.pi * t /12 - np.pi /2)
+    
+    grid_buy_price = grid_price + 0.005
+    grid_sell_price = grid_price  - 0.005 # SMALL DIFF FOR ANTI ARBITRAGE
+    
+
 
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
@@ -82,15 +86,19 @@ slack = cp.Variable(n_steps, nonneg=True)  # Slack for consumer balance
 
 # Constraints
 constraints = []
+
 # Consumer balance with slack (equality)
 constraints += [P_PV_consumer[t] + P_BESS_consumer[t] + P_grid_consumer[t] + slack[t] == consumer_demand[t]
                 for t in time_indices]
+
 # PV allocation
 constraints += [P_PV_consumer[t] + P_PV_BESS[t] + P_PV_grid[t] <= pv_power[t] for t in time_indices]
+
 # BESS constraints
 for t in time_indices:
     constraints += [P_PV_BESS[t] + P_grid_BESS[t] <= bess_power_limit,
                     P_BESS_consumer[t] + P_BESS_grid[t] <= bess_power_limit]
+
 # SOC dynamics
 constraints += [SOC[0] == soc_initial]
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
@@ -99,9 +107,7 @@ constraints += [SOC[t] <= bess_capacity for t in range(n_steps +1)]
 constraints += [SOC[t] >= 0.1 * bess_capacity for t in range(n_steps +1)]  # Minimum SOC constraint
 
 # New: Force SOC at end >= initial to encourage recharging during low-price periods for sustainability
-constraints += [SOC[n_steps] >= soc_initial]
-
-
+#constraints += [SOC[n_steps] >= soc_initial]
 
 # Objective: Maximize net revenue with slack penalty
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
@@ -167,15 +173,17 @@ if problem.status == cp.OPTIMAL:
         if slack_vals[t] > 1e-6:  # Small tolerance for numerical errors
             print(f"Time {time_steps[t]:.2f}h: Unmet demand = {slack_vals[t]:.2f} kW")
 
-        # First Image: Energy Flows
+    # First Image: Energy Flows
     plt.figure(figsize=(12, 15))  # Height for 3 subplots
 
-    # Plot 1: PV Production
+    # Plot 1: PV Production with Grid Sold and Bought
     plt.subplot(3, 1, 1)
     plt.plot(time_steps, pv_power, label='PV Generation (kW)', color='orange')
+    plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='cyan')
+    plt.plot(time_steps, P_grid_bought, label='Grid Bought (kW)', color='magenta')
     plt.xlabel('Time (hours)')
-    plt.ylabel('PV Power (kW)')
-    plt.title('PV Generation Profile')
+    plt.ylabel('Power (kW)')
+    plt.title('PV Generation and Grid Power Flows')
     plt.legend()
     plt.grid(True)
 
@@ -208,6 +216,7 @@ if problem.status == cp.OPTIMAL:
     plt.grid(True)
 
     plt.tight_layout()
+    
     # Save first image
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
     if not os.path.exists(output_dir):
@@ -221,6 +230,8 @@ if problem.status == cp.OPTIMAL:
     # Plot 1: Electricity Price
     plt.subplot(3, 1, 1)
     plt.plot(time_steps, grid_buy_price, label='Electricity Price ($/kWh)', color='blue')
+    plt.plot(time_steps, np.full(n_steps, lcoe_pv), label='PV LCOE ($/kWh)', color='orange', linestyle='--')
+    plt.plot(time_steps, np.full(n_steps, lcoe_bess), label='BESS LCOE ($/kWh)', color='green', linestyle='--')
     plt.xlabel('Time (hours)')
     plt.ylabel('Price ($/kWh)')
     plt.title('Electricity Price over the Day')
@@ -232,9 +243,10 @@ if problem.status == cp.OPTIMAL:
     plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Revenue ($)', color='cyan')
     plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost ($)', color='red')
     plt.plot(time_steps, cost_bess_per_step, label='BESS Cost ($)', color='magenta')
+    plt.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost ($)', color='green')
     plt.xlabel('Time (hours)')
     plt.ylabel('$ per Step')
-    plt.title('Grid Sold Revenue, Buy Cost, and BESS Cost')
+    plt.title('Grid Sold Revenue, Buy Cost, BESS Cost, and PV Avoided Cost')
     plt.legend()
     plt.grid(True)
 

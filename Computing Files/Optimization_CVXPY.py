@@ -38,15 +38,15 @@ def load_data():
         if 6 <= t <=18:
             pv_power[i] = 2327 * np.sin(np.pi * (t -6) / 12)
 
-    # Consumer demand (kW): constant 50 kW, 150 kW from 8-18h, with 2h ramps from 6-8h and 18-20
+    # Consumer demand (kW): constant 200 kW, 1300 kW from 8-18h, with 2h ramps from 6-8h and 18-20
     consumer_demand = np.full(n_steps, 50.0)
     for i, t in enumerate(time_steps):
         if 6 <= t <8:
-            consumer_demand[i] += 100.0 * (t -6) /2  # Ramp up from 50 to 150 kW
+            consumer_demand[i] += 1300.0 * (t -6) /2  # Ramp up from 50 to 150 kW
         elif 8 <= t <=18:
-            consumer_demand[i] = 150.0
+            consumer_demand[i] = 1500.0
         elif 18 < t <=20:
-            consumer_demand[i] += 100.0 * (20 - t) /2  # Ramp down from 150 to 50 kW
+            consumer_demand[i] += 1300.0 * (20 - t) /2  # Ramp down from 150 to 50 kW
 
     # Grid prices ($/kWh): Price[t] = 0.1 + rand(x) - 0.02 * sin((t) - y)
     # y is phase shift so min at t=0, max at t=12, min at t=24

@@ -4,19 +4,17 @@ import cvxpy as cp
 import matplotlib.pyplot as plt
 import os
 
-
-
 print("--- Running the REAL Optimization Script using CVXPY ---")
 
-# Time framework: 24 hours, 15-minute intervals (96 steps)
-time_steps = np.arange(0, 24, 0.25)
+# Time framework: 1 week (168 hours), 15-minute intervals (672 steps)
+time_steps = np.arange(0, 168, 0.25)
 n_steps = len(time_steps)
 delta_t = 0.25  # hours
 time_indices = range(n_steps)
 
 def load_data():
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
-    pv_lcoe_data = pd.read_csv('C:/Users\dell\V1_First_Model\Input Data Files\PV_LCOE.csv', comment='#')
+    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv', comment='#')
     lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]
 
     # Load LCOE for BESS from BESS_LCOE.csv, ignoring comment lines
@@ -24,7 +22,7 @@ def load_data():
     lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]
 
     # Load constants from Constants_Plant.csv, ignoring comment lines
-    constants_data = pd.read_csv('C:/Users\dell\V1_First_Model\Input Data Files/Constants_Plant.csv', comment='#')
+    constants_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/Constants_Plant.csv', comment='#')
     bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])
     bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])
     eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])
@@ -32,36 +30,54 @@ def load_data():
     soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])
     pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])
 
-    # Sample PV power profile (kW): sinusoidal daytime generation
+    # Sample PV power profile (kW): sinusoidal daytime generation over 7 days, with bad weather and noise
     pv_power = np.zeros(n_steps)
+    multipliers = [1.0, 0.9, 0.5, 0.8, 1.0, 0.6, 1.0]  # Day-specific factors for weather variation (e.g., cloudy days)
     for i, t in enumerate(time_steps):
-        if 6 <= t <=18:
-            pv_power[i] = 1327 * np.sin(np.pi * (t -6) / 12)
+        local_t = t % 24
+        day = int(t // 24)
+        if 6 <= local_t <= 18:
+            amplitude = 1327 * multipliers[day]
+            pv_power[i] = amplitude * np.sin(np.pi * (local_t - 6) / 12) + np.random.normal(0, 10)  # Realistic noise
+        pv_power[i] = max(0, pv_power[i])  # Ensure non-negative
 
-    # Consumer demand (kW): constant 200 kW, 1300 kW from 8-18h, with 2h ramps from 6-8h and 18-20
-    consumer_demand = np.full(n_steps, 200.0)
+    # Consumer demand (kW): 5 production days (Mon-Fri) with ramps, 2 standby days (Sat-Sun) flat 70 kW
+    consumer_demand = np.zeros(n_steps)
     for i, t in enumerate(time_steps):
-        if 6 <= t <8:
-            consumer_demand[i] += 1000.0 * (t -6) /2  # Ramp up from 50 to 150 kW
-        elif 8 <= t <=16:
-            consumer_demand[i] = 1200.0
-        elif 16 < t <=18:
-            consumer_demand[i] += 1000.0 * (18 - t) /2  # Ramp down from 150 to 50 kW
+        local_t = t % 24
+        day = int(t // 24)
+        if day < 5:  # Production days
+            base = 200.0
+            if 6 <= local_t < 8:
+                add = 1000.0 * (local_t - 6) / 2
+                consumer_demand[i] = base + add
+            elif 8 <= local_t <= 16:
+                consumer_demand[i] = 1200.0
+            elif 16 < local_t <= 18:
+                add = 1000.0 * (18 - local_t) / 2
+                consumer_demand[i] = base + add
+            else:
+                consumer_demand[i] = base
+        else:  # Standby days
+            consumer_demand[i] = 70.0
 
-    # Grid prices ($/kWh): Price[t] = 0.1 + rand(x) - 0.02 * sin((t) - y)
-    # y is phase shift so min at t=0, max at t=12, min at t=24
-    # sin(2πt/24 - y) = -1 at t=0, 1 at t=12, -1 at t=24
-    # At t=0: sin(-y) = -1 => -y = -π/2 => y = π/2
-    
-    grid_price = np.zeros(n_steps)
-    for i, t in enumerate(time_steps):
-        x = np.random.uniform(-0.01,0.01)
-        grid_price[i] = 0.1 + x + 0.01 * np.sin(2 * np.pi * t /12 - np.pi /2)
-    
-    grid_buy_price = grid_price + 0.005
-    grid_sell_price = grid_price  - 0.005 # SMALL DIFF FOR ANTI ARBITRAGE
-    
-
+    # Grid prices ($/kWh): Synthetic based on GME weekly averages (~0.103 $/kWh for NORD), with daily/hourly variation
+    # Generate hourly first, then interpolate to 15-min
+    hours = np.arange(0, 168)
+    grid_price_hourly = np.zeros(168)
+    base_daily = 0.103 + np.random.normal(0, 0.02, 7)  # Day-specific base shift for realism
+    amplitude = 0.05  # Increased for volatility to encourage arbitrage
+    for d in range(7):
+        for h in range(24):
+            idx = d * 24 + h
+            x = np.random.uniform(-0.005, 0.005)
+            grid_price_hourly[idx] = base_daily[d] + x + amplitude * np.sin(2 * np.pi * h / 24 - np.pi / 2)
+    # Linear interpolation to 15-min resolution
+    time_hourly = np.arange(0, 168, 1)
+    time_quarter = np.arange(0, 168, 0.25)
+    grid_price = np.interp(time_quarter, time_hourly, grid_price_hourly)
+    grid_buy_price = grid_price + 0.01
+    grid_sell_price = grid_price - 0.01
 
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
@@ -80,9 +96,8 @@ P_BESS_consumer = cp.Variable(n_steps, nonneg=True)
 P_BESS_grid = cp.Variable(n_steps, nonneg=True)
 P_grid_consumer = cp.Variable(n_steps, nonneg=True)
 P_grid_BESS = cp.Variable(n_steps, nonneg=True)
-SOC = cp.Variable(n_steps +1, nonneg=True)
+SOC = cp.Variable(n_steps + 1, nonneg=True)
 slack = cp.Variable(n_steps, nonneg=True)  # Slack for consumer balance
-
 
 # Constraints
 constraints = []
@@ -103,11 +118,11 @@ for t in time_indices:
 constraints += [SOC[0] == soc_initial]
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
                 (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)]
-constraints += [SOC[t] <= bess_capacity for t in range(n_steps +1)]
-constraints += [SOC[t] >= 0.1 * bess_capacity for t in range(n_steps +1)]  # Minimum SOC constraint
+constraints += [SOC[t] <= bess_capacity for t in range(n_steps + 1)]
+constraints += [SOC[t] >= 0.1 * bess_capacity for t in range(n_steps + 1)]  # Minimum SOC constraint
 
-# New: Force SOC at end >= initial to encourage recharging during low-price periods for sustainability
-#constraints += [SOC[n_steps] >= soc_initial]
+# Force SOC at end >= initial for weekly sustainability and arbitrage incentive
+constraints += [SOC[n_steps] >= soc_initial]
 
 # Objective: Maximize net revenue with slack penalty
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
@@ -173,49 +188,66 @@ if problem.status == cp.OPTIMAL:
         if slack_vals[t] > 1e-6:  # Small tolerance for numerical errors
             print(f"Time {time_steps[t]:.2f}h: Unmet demand = {slack_vals[t]:.2f} kW")
 
+    # Improve plot appearance globally
+    plt.rcParams.update({'font.size': 8})
+
+    # Day labels for xticks
+    day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon']
+
     # First Image: Energy Flows
-    plt.figure(figsize=(20, 20))  # Height for 3 subplots
+    plt.figure(figsize=(12, 18))  # Increased height for clarity
 
     # Plot 1: PV Production with Grid Sold and Bought
     plt.subplot(3, 1, 1)
-    plt.plot(time_steps, pv_power, label='PV Generation (kW)', color='orange')
+    plt.plot(time_steps, pv_power, label='PV Gen (kW)', color='orange')
     plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='cyan')
     plt.plot(time_steps, P_grid_bought, label='Grid Bought (kW)', color='magenta')
-    plt.xlabel('Time (hours)')
+    plt.xlabel('Time (h)')
     plt.ylabel('Power (kW)')
-    plt.title('PV Generation and Grid Power Flows')
-    plt.legend()
+    plt.title('PV and Grid Flows')
+    plt.legend(loc='best')
     plt.grid(True)
+    plt.xticks(np.arange(0, 169, 24), day_labels)
+    for d in range(1, 7):
+        plt.axvline(d * 24, color='gray', linestyle='--')
 
     # Plot 2: BESS Power and SOC
     plt.subplot(3, 1, 2)
     ax1 = plt.gca()
-    ax1.plot(time_steps, P_BESS_charge, label='BESS Charge In (kW)', color='blue')
-    ax1.plot(time_steps, P_BESS_discharge, label='BESS Power Out (kW)', color='red')
-    ax1.set_xlabel('Time (hours)')
+    ax1.plot(time_steps, P_BESS_charge, label='BESS Charge (kW)', color='blue')
+    ax1.plot(time_steps, P_BESS_discharge, label='BESS Discharge (kW)', color='red')
+    ax1.set_xlabel('Time (h)')
     ax1.set_ylabel('Power (kW)')
-    ax1.set_title('BESS Power In/Out and SOC')
-    ax1.legend(loc='upper left')
+    ax1.set_title('BESS Flows and SOC')
+    ax1.legend(loc='best')
     ax1.grid(True)
+    ax1.set_xticks(np.arange(0, 169, 24))
+    ax1.set_xticklabels(day_labels)
+    for d in range(1, 7):
+        ax1.axvline(d * 24, color='gray', linestyle='--')
 
     ax2 = ax1.twinx()
-    ax2.plot(np.arange(0, 24.25, 0.25), SOC_vals, label='SOC (kWh)', color='green', linestyle='--')
+    ax2.plot(np.arange(0, 168.25, 0.25), SOC_vals, label='SOC (kWh)', color='green', linestyle='--')
     ax2.set_ylabel('SOC (kWh)')
     ax2.legend(loc='upper right')
 
     # Plot 3: Consumer Power Flow
     plt.subplot(3, 1, 3)
     plt.stackplot(time_steps, P_PV_consumer_vals, P_BESS_consumer_vals, P_grid_consumer_vals, slack_vals,
-                  labels=['PV to Consumer', 'BESS to Consumer', 'Grid to Consumer', 'Unmet Demand'],
+                  labels=['PV to Cons', 'BESS to Cons', 'Grid to Cons', 'Unmet'],
                   colors=['orange', 'green', 'blue', 'red'])
     plt.plot(time_steps, consumer_demand, label='Demand', color='black', linestyle='--')
-    plt.xlabel('Time (hours)')
+    plt.xlabel('Time (h)')
     plt.ylabel('Power (kW)')
-    plt.title('Consumer Power Flow Composition')
-    plt.legend(loc='upper left')
+    plt.title('Consumer Flow Composition')
+    plt.legend(loc='best')
     plt.grid(True)
+    plt.xticks(np.arange(0, 169, 24), day_labels)
+    for d in range(1, 7):
+        plt.axvline(d * 24, color='gray', linestyle='--')
 
-    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)  # Increase vertical spacing
+    plt.tight_layout(pad=1.5)
     
     # Save first image
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
@@ -224,49 +256,60 @@ if problem.status == cp.OPTIMAL:
     plt.savefig(os.path.join(output_dir, 'Energy_Flows.png'))
     plt.show()
 
-        # Second Image: Financials
-    plt.figure(figsize=(20, 20))  # Height for 3 subplots
+    # Second Image: Financials
+    plt.figure(figsize=(12, 18))  # Increased height
 
     # Plot 1: Electricity Price
     plt.subplot(3, 1, 1)
-    plt.plot(time_steps, grid_buy_price, label='Electricity Price ($/kWh)', color='blue')
-    plt.plot(time_steps, np.full(n_steps, lcoe_pv), label='PV LCOE ($/kWh)', color='orange', linestyle='--')
-    plt.plot(time_steps, np.full(n_steps, lcoe_bess), label='BESS LCOE ($/kWh)', color='green', linestyle='--')
-    plt.xlabel('Time (hours)')
+    plt.plot(time_steps, grid_buy_price, label='Grid Price ($/kWh)', color='blue')
+    plt.plot(time_steps, np.full(n_steps, lcoe_pv), label='PV LCOE', color='orange', linestyle='--')
+    plt.plot(time_steps, np.full(n_steps, lcoe_bess), label='BESS LCOE', color='green', linestyle='--')
+    plt.xlabel('Time (h)')
     plt.ylabel('Price ($/kWh)')
-    plt.title('Electricity Price over the Day')
-    plt.legend()
+    plt.title('Prices and LCOEs')
+    plt.legend(loc='best')
     plt.grid(True)
+    plt.xticks(np.arange(0, 169, 24), day_labels)
+    for d in range(1, 7):
+        plt.axvline(d * 24, color='gray', linestyle='--')
 
     # Plot 2: Grid sold revenue, buy cost, and BESS cost
     plt.subplot(3, 1, 2)
-    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Revenue ($)', color='cyan')
+    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Rev ($)', color='cyan')
     plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost ($)', color='red')
     plt.plot(time_steps, cost_bess_per_step, label='BESS Cost ($)', color='magenta')
     plt.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost ($)', color='green')
-    plt.xlabel('Time (hours)')
-    plt.ylabel('$ per Step')
-    plt.title('Grid Sold Revenue, Buy Cost, BESS Cost, and PV Avoided Cost')
-    plt.legend()
+    plt.xlabel('Time (h)')
+    plt.ylabel('$/Step')
+    plt.title('Revenues and Costs')
+    plt.legend(loc='best')
     plt.grid(True)
+    plt.xticks(np.arange(0, 169, 24), day_labels)
+    for d in range(1, 7):
+        plt.axvline(d * 24, color='gray', linestyle='--')
 
     # Plot 3: Revenue at each timestep and cumulative revenue
     plt.subplot(3, 1, 3)
     ax1 = plt.gca()
-    ax1.plot(time_steps, total_net_per_step, label='Revenue per Timestep ($)', color='purple')
-    ax1.set_xlabel('Time (hours)')
-    ax1.set_ylabel('Revenue per Step ($)')
-    ax1.set_title('Revenue per Timestep and Cumulative Revenue')
+    ax1.plot(time_steps, total_net_per_step, label='Rev per Step ($)', color='purple')
+    ax1.set_xlabel('Time (h)')
+    ax1.set_ylabel('Rev per Step ($)')
+    ax1.set_title('Timestep and Cum. Revenue')
     ax1.legend(loc='upper left')
     ax1.grid(True)
+    ax1.set_xticks(np.arange(0, 169, 24))
+    ax1.set_xticklabels(day_labels)
+    for d in range(1, 7):
+        ax1.axvline(d * 24, color='gray', linestyle='--')
 
     ax2 = ax1.twinx()
     cumulative_revenue = np.cumsum(total_net_per_step)
-    ax2.plot(time_steps, cumulative_revenue, label='Cumulative Revenue ($)', color='orange', linestyle='--')
-    ax2.set_ylabel('Cumulative Revenue ($)')
+    ax2.plot(time_steps, cumulative_revenue, label='Cum. Rev ($)', color='orange', linestyle='--')
+    ax2.set_ylabel('Cum. Rev ($)')
     ax2.legend(loc='upper right')
 
-    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+    plt.tight_layout(pad=1.5)
     # Save second image
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
     if not os.path.exists(output_dir):

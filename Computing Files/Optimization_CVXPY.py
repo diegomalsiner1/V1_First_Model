@@ -210,10 +210,10 @@ if problem.status == cp.OPTIMAL:
     plt.show()
 
         # Second Image: Financials
-    plt.figure(figsize=(12, 10))  # Height for 2 subplots
+    plt.figure(figsize=(12, 15))  # Height for 3 subplots
 
     # Plot 1: Electricity Price
-    plt.subplot(2, 1, 1)
+    plt.subplot(3, 1, 1)
     plt.plot(time_steps, grid_buy_price, label='Electricity Price ($/kWh)', color='blue')
     plt.xlabel('Time (hours)')
     plt.ylabel('Price ($/kWh)')
@@ -221,18 +221,24 @@ if problem.status == cp.OPTIMAL:
     plt.legend()
     plt.grid(True)
 
-    # Plot 2: Revenue Components with dual scales
-    plt.subplot(2, 1, 2)
+    # Plot 2: Grid sold revenue, buy cost, and BESS cost
+    plt.subplot(3, 1, 2)
+    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Revenue ($)', color='cyan')
+    plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost ($)', color='red')
+    plt.plot(time_steps, cost_bess_per_step, label='BESS Cost ($)', color='magenta')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('$ per Step')
+    plt.title('Grid Sold Revenue, Buy Cost, and BESS Cost')
+    plt.legend()
+    plt.grid(True)
+
+    # Plot 3: Revenue at each timestep and cumulative revenue
+    plt.subplot(3, 1, 3)
     ax1 = plt.gca()
-    ax1.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost ($)', color='green')
-    ax1.plot(time_steps, rev_sell_per_step, label='Grid Sell Revenue ($)', color='cyan')
-    ax1.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost ($)', color='red')
-    ax1.plot(time_steps, cost_bess_per_step, label='BESS Cost ($)', color='magenta')
-    ax1.plot(time_steps, penalty_per_step, label='Penalty ($)', color='black')
-    ax1.plot(time_steps, total_net_per_step, label='Total Revenue per Step ($)', color='purple')
+    ax1.plot(time_steps, total_net_per_step, label='Revenue per Timestep ($)', color='purple')
     ax1.set_xlabel('Time (hours)')
-    ax1.set_ylabel('Revenue/Cost per Step ($)')
-    ax1.set_title('Revenue Components over Time')
+    ax1.set_ylabel('Revenue per Step ($)')
+    ax1.set_title('Revenue per Timestep and Cumulative Revenue')
     ax1.legend(loc='upper left')
     ax1.grid(True)
 
@@ -242,9 +248,10 @@ if problem.status == cp.OPTIMAL:
     ax2.set_ylabel('Cumulative Revenue ($)')
     ax2.legend(loc='upper right')
 
-    # Save first image
+    plt.tight_layout()
+    # Save second image
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, 'Financials.png'))
+    plt.savefig(os.path.join(output_dir, 'Financial_Metrics.png'))
     plt.show()

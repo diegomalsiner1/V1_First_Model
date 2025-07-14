@@ -43,10 +43,10 @@ def load_data():
     for i, t in enumerate(time_steps):
         if 6 <= t <8:
             consumer_demand[i] += 1300.0 * (t -6) /2  # Ramp up from 50 to 150 kW
-        elif 8 <= t <=18:
+        elif 8 <= t <=16:
             consumer_demand[i] = 1500.0
-        elif 18 < t <=20:
-            consumer_demand[i] += 1300.0 * (20 - t) /2  # Ramp down from 150 to 50 kW
+        elif 16 < t <=18:
+            consumer_demand[i] += 1300.0 * (18 - t) /2  # Ramp down from 150 to 50 kW
 
     # Grid prices ($/kWh): Price[t] = 0.1 + rand(x) - 0.02 * sin((t) - y)
     # y is phase shift so min at t=0, max at t=12, min at t=24
@@ -54,8 +54,8 @@ def load_data():
     # At t=0: sin(-y) = -1 => -y = -π/2 => y = π/2
     grid_price = np.zeros(n_steps)
     for i, t in enumerate(time_steps):
-        x = np.random.uniform(-0.05,0.1)
-        grid_price[i] = 0.1 + x + 0.02 * np.sin(2 * np.pi * t /24 - np.pi /2)
+        x = np.random.uniform(-0.02,0.04)
+        grid_price[i] = 0.1 + x + 0.03 * np.sin(2 * np.pi * t /24 - np.pi /2)
     grid_buy_price = grid_price + 0.01
     grid_sell_price = grid_price  - 0.01 # SMALL DIFF FOR ANTI ARBITRAGE
 

@@ -36,7 +36,7 @@ def load_data():
     pv_power = np.zeros(n_steps)
     for i, t in enumerate(time_steps):
         if 6 <= t <=18:
-            pv_power[i] = 100 * np.sin(np.pi * (t -6) / 12)
+            pv_power[i] = 2327 * np.sin(np.pi * (t -6) / 12)
 
     # Consumer demand (kW): constant 50 kW, 150 kW from 8-18h, with 2h ramps from 6-8h and 18-20
     consumer_demand = np.full(n_steps, 50.0)
@@ -55,9 +55,9 @@ def load_data():
     grid_price = np.zeros(n_steps)
     for i, t in enumerate(time_steps):
         x = np.random.uniform(-0.05,0.1)
-        grid_price[i] = 0.1 + x -0.02 * np.sin(2 * np.pi * t /24 - np.pi /2)
-    grid_buy_price = grid_price
-    grid_sell_price = grid_price  # Assuming buy and sell prices are the same
+        grid_price[i] = 0.1 + x + 0.02 * np.sin(2 * np.pi * t /24 - np.pi /2)
+    grid_buy_price = grid_price + 0.01
+    grid_sell_price = grid_price  - 0.01 # SMALL DIFF FOR ANTI ARBITRAGE
 
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,

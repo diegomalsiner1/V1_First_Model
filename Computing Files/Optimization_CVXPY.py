@@ -203,7 +203,7 @@ if problem.status == cp.OPTIMAL:
 
     plt.tight_layout()
     # Save first image
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__')), '..', 'Output Files')
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(file)), '..', 'Output Files')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     plt.savefig(os.path.join(output_dir, 'energy_flows.png'))

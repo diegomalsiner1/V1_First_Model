@@ -240,7 +240,7 @@ if problem.status == cp.OPTIMAL:
     plt.show()
 else:
     print("Optimization failed. Status:", problem.status)
-    print("Check constraints/data for infeasibility."
+    print("Check constraints/data for infeasibility.")
     # Diagnostic: Check consumer balance feasibility
     total_demand = sum(consumer_demand) * delta_t
     total_pv = sum(pv_power) * delta_t

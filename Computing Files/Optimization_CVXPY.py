@@ -33,10 +33,14 @@ def load_data():
     pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])
 
     # Sample PV power profile (kW): sinusoidal daytime generation
-    pv_power = np.zeros(n_steps)
+    #pv_power = np.zeros(n_steps)
+    #for i, t in enumerate(time_steps):
+    #    if 5 <= t <= 19:
+    #        pv_power[i] = 100 * np.sin(np.pi * (t - 6) / 12)
+    #SAMPLE PV POWER -- ENSURING NO NEGATIVE VALUES HERE!!!!
     for i, t in enumerate(time_steps):
-        if 5 <= t <= 19:
-            pv_power[i] = 100 * np.sin(np.pi * (t - 6) / 12)
+    if 5 <= t <=19:
+        pv_power[i] = 100 * max(0, np.sin(np.pi * (t -6) /12))
 
     # Consumer demand (kW): constant 50 kW, 150 kW from 8-18h, with 2h ramps from 6-8h and 18-20h
     consumer_demand = np.full(n_steps, 50.0)

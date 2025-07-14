@@ -174,7 +174,7 @@ if problem.status == cp.OPTIMAL:
             print(f"Time {time_steps[t]:.2f}h: Unmet demand = {slack_vals[t]:.2f} kW")
 
     # First Image: Energy Flows
-    plt.figure(figsize=(12, 15))  # Height for 3 subplots
+    plt.figure(figsize=(20, 20))  # Height for 3 subplots
 
     # Plot 1: PV Production with Grid Sold and Bought
     plt.subplot(3, 1, 1)
@@ -225,7 +225,7 @@ if problem.status == cp.OPTIMAL:
     plt.show()
 
         # Second Image: Financials
-    plt.figure(figsize=(12, 15))  # Height for 3 subplots
+    plt.figure(figsize=(20, 20))  # Height for 3 subplots
 
     # Plot 1: Electricity Price
     plt.subplot(3, 1, 1)

@@ -79,6 +79,7 @@ P_grid_BESS = cp.Variable(n_steps, nonneg=True)
 SOC = cp.Variable(n_steps +1, nonneg=True)
 slack = cp.Variable(n_steps, nonneg=True)  # Slack for consumer balance
 
+
 # Constraints
 constraints = []
 # Consumer balance with slack (equality)
@@ -96,6 +97,11 @@ constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]
                 (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)]
 constraints += [SOC[t] <= bess_capacity for t in range(n_steps +1)]
 constraints += [SOC[t] >= 0.1 * bess_capacity for t in range(n_steps +1)]  # Minimum SOC constraint
+
+# New: Force SOC at end >= initial to encourage recharging during low-price periods for sustainability
+constraints += [SOC[n_steps] >= soc_initial]
+
+
 
 # Objective: Maximize net revenue with slack penalty
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +

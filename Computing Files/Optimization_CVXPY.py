@@ -33,11 +33,8 @@ def load_data():
     pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])
 
     # Sample PV power profile (kW): sinusoidal daytime generation
-    #pv_power = np.zeros(n_steps)
-    #for i, t in enumerate(time_steps):
-    #    if 5 <= t <= 19:
-    #        pv_power[i] = 100 * np.sin(np.pi * (t - 6) / 12)
-    #SAMPLE PV POWER -- ENSURING NO NEGATIVE VALUES HERE!!!!
+    
+    pv_power = np.zeros(n_steps)
     for i, t in enumerate(time_steps):
     if 5 <= t <=19:
         pv_power[i] = 100 * max(0, np.sin(np.pi * (t -6) /12))

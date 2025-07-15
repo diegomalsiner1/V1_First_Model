@@ -4,6 +4,8 @@ import cvxpy as cp
 import matplotlib.pyplot as plt
 import os
 
+#TEST
+
 print("--- Running the REAL Optimization Script using GUROBI ---")
 
 # Time framework: 1 week (168 hours), 15-minute intervals (672 steps)

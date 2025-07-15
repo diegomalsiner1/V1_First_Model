@@ -125,9 +125,9 @@ for t in time_indices:
 # SOC dynamics
 constraints += [SOC[0] == soc_initial]
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
-                (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)]
+                (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)] #OPTIONAL ADD SELF DISCHARGE OF BATTERY
 constraints += [SOC[t] <= bess_capacity for t in range(n_steps + 1)]
-constraints += [SOC[t] >= 0.1 * bess_capacity for t in range(n_steps + 1)]  # Minimum SOC constraint
+constraints += [SOC[t] >= 0.05 * bess_capacity for t in range(n_steps + 1)]  # Minimum SOC constraint 5% of BESS_CAPACITY
 
 # Force SOC at end >= initial for weekly sustainability and arbitrage incentive
 constraints += [SOC[n_steps] >= soc_initial]
@@ -213,7 +213,7 @@ if problem.status == cp.OPTIMAL:
     # Plot 1: PV Production with Grid Sold and Bought
     plt.subplot(3, 1, 1)
     plt.plot(time_steps, pv_power, label='PV Gen (kW)', color='orange')
-    plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='cyan')
+    plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='blue')
     plt.plot(time_steps, P_grid_bought, label='Grid Bought (kW)', color='magenta')
     plt.xlabel('Time (h)')
     plt.ylabel('Power (kW)')
@@ -329,5 +329,5 @@ if problem.status == cp.OPTIMAL:
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, 'Financial_Metrics.png'))
+    plt.savefig(os.path.join(output_dir, 'Financials.png'))
     plt.show()

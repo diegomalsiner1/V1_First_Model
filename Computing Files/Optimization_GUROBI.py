@@ -63,7 +63,7 @@ def load_data():
         else:  # Standby days
             consumer_demand[i] = 70.0
 
-    # Grid prices ($/kWh): Synthetic based on GME weekly averages (~0.103 $/kWh for NORD), with daily/hourly variation
+    # Grid prices (Eur/kWh): Synthetic based on GME weekly averages (~0.103 Eur/kWh for NORD), with daily/hourly variation
     # Generate hourly first, then interpolate to 15-min
     # hours = np.arange(0, 168)
     # grid_price_hourly = np.zeros(168)
@@ -193,7 +193,7 @@ if problem.status == cp.OPTIMAL:
         bess_rev_per_step.append(bess_rev)
 
     total_revenue = sum(total_net_per_step)
-    print(f"Total Revenue: ${total_revenue:.2f}")
+    print(f"Total Revenue: Eur{total_revenue:.2f}")
 
     # Check for unmet demand
     print("Time steps with unmet demand (kW):")
@@ -274,11 +274,11 @@ if problem.status == cp.OPTIMAL:
 
     # Plot 1: Electricity Price
     plt.subplot(3, 1, 1)
-    plt.plot(time_steps, grid_buy_price, label='Grid Price ($/kWh)', color='blue')
+    plt.plot(time_steps, grid_buy_price, label='Grid Price (Eur/kWh)', color='blue')
     plt.plot(time_steps, np.full(n_steps, lcoe_pv), label='PV LCOE', color='orange', linestyle='--')
     plt.plot(time_steps, np.full(n_steps, lcoe_bess), label='BESS LCOE', color='green', linestyle='--')
     plt.xlabel('Time (h)')
-    plt.ylabel('Price ($/kWh)')
+    plt.ylabel('Price (Eur/kWh)')
     plt.title('Prices and LCOEs')
     plt.legend(loc='best')
     plt.grid(True)
@@ -288,12 +288,12 @@ if problem.status == cp.OPTIMAL:
 
     # Plot 2: Grid sold revenue, buy cost, and BESS cost
     plt.subplot(3, 1, 2)
-    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Rev ($)', color='cyan')
-    plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost ($)', color='red')
-    plt.plot(time_steps, cost_bess_per_step, label='BESS Cost ($)', color='magenta')
-    plt.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost ($)', color='green')
+    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Rev (Eur)', color='cyan')
+    plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost (Eur)', color='red')
+    plt.plot(time_steps, cost_bess_per_step, label='BESS Cost (Eur)', color='magenta')
+    plt.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost (Eur)', color='green')
     plt.xlabel('Time (h)')
-    plt.ylabel('$/Step')
+    plt.ylabel('Eur/Step')
     plt.title('Revenues and Costs')
     plt.legend(loc='best')
     plt.grid(True)
@@ -304,9 +304,9 @@ if problem.status == cp.OPTIMAL:
     # Plot 3: Revenue at each timestep and cumulative revenue
     plt.subplot(3, 1, 3)
     ax1 = plt.gca()
-    ax1.plot(time_steps, total_net_per_step, label='Rev per Step ($)', color='purple')
+    ax1.plot(time_steps, total_net_per_step, label='Rev per Step (Eur)', color='purple')
     ax1.set_xlabel('Time (h)')
-    ax1.set_ylabel('Rev per Step ($)')
+    ax1.set_ylabel('Rev per Step (Eur)')
     ax1.set_title('Timestep and Cum. Revenue')
     ax1.legend(loc='upper left')
     ax1.grid(True)
@@ -317,10 +317,10 @@ if problem.status == cp.OPTIMAL:
 
     ax2 = ax1.twinx()
     cumulative_revenue = np.cumsum(total_net_per_step)
-    ax2.plot(time_steps, cumulative_revenue, label='Cum. Rev ($)', color='orange', linestyle='--')
+    ax2.plot(time_steps, cumulative_revenue, label='Cum. Rev (Eur)', color='orange', linestyle='--')
     cumulative_bess_revenue = np.cumsum(bess_rev_per_step)
-    ax2.plot(time_steps, cumulative_bess_revenue, label='Cum. BESS Rev ($)', color='blue', linestyle='-.')
-    ax2.set_ylabel('Cum. Rev ($)')
+    ax2.plot(time_steps, cumulative_bess_revenue, label='Cum. BESS Rev (Eur)', color='blue', linestyle='-.')
+    ax2.set_ylabel('Cum. Rev (Eur)')
     ax2.legend(loc='upper right')
 
     plt.subplots_adjust(hspace=0.4)

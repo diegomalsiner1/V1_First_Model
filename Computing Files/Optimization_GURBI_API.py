@@ -7,7 +7,7 @@ import requests
 from datetime import date, timedelta
 from xml.etree import ElementTree as ET
 
-print("--- Running the REAL Optimization Script using GUROBI ---")
+print("--- Running the REAL Optimization Script using GUROBI and API to ENTSO-E ---")
 
 # Time framework: 1 week (168 hours), 15-minute intervals (672 steps)
 time_steps = np.arange(0, 168, 0.25)
@@ -15,51 +15,62 @@ n_steps = len(time_steps)
 delta_t = 0.25  # hours
 time_indices = range(n_steps)
 
+#ENTSOE_TOKEN = "cd4a21d9-d58c-4b68-b233-ae5e0d8707f5"  # Replace with your UUID token from transparency@entsoe.eu
+
 ENTSOE_TOKEN = "cd4a21d9-d58c-4b68-b233-ae5e0d8707f5"  # Replace with your UUID token from transparency@entsoe.eu
 
 def fetch_prices_last_week():
-    # Calculate last full week (Monday to Sunday)
-    today = date.today()
-    if today.weekday() == 0:  # If today is Monday, previous week
-        last_monday = today - timedelta(days=7)
-    else:
-        last_monday = today - timedelta(days=today.weekday())
+    # For testing: Use a known past week with data
+    last_monday = date(2025, 1,12)
     last_sunday = last_monday + timedelta(days=6)
 
+    # Original dynamic (uncomment for real, but ensure dates are past/current)
+    # today = date.today()
+    # last_monday = today - timedelta(days=today.weekday() + 7)
+    # last_sunday = last_monday + timedelta(days=6)
+
     period_start = last_monday.strftime('%Y%m%d') + '0000'
-    period_end = (last_sunday + timedelta(days=1)).strftime('%Y%m%d') + '0000'  # End is exclusive
+    period_end = (last_sunday + timedelta(days=1)).strftime('%Y%m%d') + '0000'
 
     url = "https://web-api.tp.entsoe.eu/api"
     params = {
         'securityToken': ENTSOE_TOKEN,
-        'documentType': 'A44',  # Day-ahead prices
-        'in_Domain': '10Y1001A1001A73I',  # Italy NORD bidding zone
-        'out_Domain': '10Y1001A1001A73I',
+        'documentType': 'A44',
+        'in_Domain': '10Y1001A1001A73I',  #ITALY NORD: 10Y1001A1001A73I
+        'out_Domain': '10Y1001A1001A73I', #CH TOTAL: 10YCH-SWISSGRIDZ
         'periodStart': period_start,
         'periodEnd': period_end
     }
 
     try:
         response = requests.get(url, params=params)
+        print(f"Status Code: {response.status_code}")  # Debug: Should be 200
+        print(f"Response Snippet: {response.text[:1000]}")  # Debug: See XML
         response.raise_for_status()
         root = ET.fromstring(response.content)
 
-        grid_price_hourly = np.zeros(168)  # 7 days * 24 hours
-        ns = {'ns': 'urn:iec62325.351:tc57wg16:451-3:publicationdocument:7:0'}  # Namespace
+        grid_price_hourly = np.zeros(168)
+        ns = {'ns': 'urn:iec62325.351:tc57wg16:451-3:publicationdocument:7:0'}
         time_series = root.findall('.//ns:TimeSeries', ns)
         hourly_index = 0
         for ts in time_series:
             points = ts.findall('ns:Period/ns:Point', ns)
+            daily_prices = np.zeros(96)  # 15-min prices per day
             for point in points:
-                position = int(point.find('ns:position', ns).text) - 1  # 1-based to 0-based
-                price = float(point.find('ns:price.amount', ns).text)
-                grid_price_hourly[hourly_index + position] = price / 1000  # €/MWh to €/kWh
-            hourly_index += len(points)  # Advance by day hours
+                position = int(point.find('ns:position', ns).text) - 1
+                price = float(point.find('ns:price.amount', ns).text) / 1000
+                daily_prices[position] = price
+            # Average to hourly (4 15-min per hour)
+            for h in range(24):
+                start = h * 4
+                avg_price = np.mean(daily_prices[start:start+4])
+                grid_price_hourly[hourly_index + h] = avg_price
+            hourly_index += 24
 
         return grid_price_hourly
     except Exception as e:
         print(f"Error fetching ENTSO-E prices: {e}")
-        return np.zeros(168)  # Fallback
+        return np.zeros(168)
 
 def load_data():
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
@@ -81,7 +92,7 @@ def load_data():
 
     # Sample PV power profile (kW): sinusoidal daytime generation over 7 days, with bad weather and noise
     pv_power = np.zeros(n_steps)
-    multipliers = [1.0, 0.9, 0.5, 0.8, 1.0, 0.6, 1.0]  # Day-specific factors for weather variation (e.g., cloudy days)
+    multipliers = [1.0, 0.9, 0.85, 0.8, 1.0, 0.6, 1.0]  # Day-specific factors for weather variation (e.g., cloudy days)
     for i, t in enumerate(time_steps):
         local_t = t % 24
         day = int(t // 24)
@@ -98,17 +109,17 @@ def load_data():
         if day < 5:  # Production days
             base = 200.0
             if 6 <= local_t < 8:
-                add = 1000.0 * (local_t - 6) / 2
+                add = 800.0 * (local_t - 6) / 2
                 consumer_demand[i] = base + add
             elif 8 <= local_t <= 16:
-                consumer_demand[i] = 1200.0
+                consumer_demand[i] = 1000.0
             elif 16 < local_t <= 18:
-                add = 1000.0 * (18 - local_t) / 2
+                add = 800.0 * (18 - local_t) / 2
                 consumer_demand[i] = base + add
             else:
                 consumer_demand[i] = base
         else:  # Standby days
-            consumer_demand[i] = 70.0
+            consumer_demand[i] = 100.0
 
     # Dynamic fetch of grid prices using ENTSO-E API
     grid_price_hourly = fetch_prices_last_week()
@@ -365,3 +376,4 @@ if problem.status == cp.OPTIMAL:
         os.makedirs(output_dir)
     plt.savefig(os.path.join(output_dir, 'Financial_Metrics.png'))
     plt.show()
+

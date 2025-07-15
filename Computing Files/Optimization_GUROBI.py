@@ -4,7 +4,7 @@ import cvxpy as cp
 import matplotlib.pyplot as plt
 import os
 
-print("--- Running the REAL Optimization Script using CVXPY ---")
+print("--- Running the REAL Optimization Script using GUROBI ---")
 
 # Time framework: 1 week (168 hours), 15-minute intervals (672 steps)
 time_steps = np.arange(0, 168, 0.25)
@@ -32,7 +32,7 @@ def load_data():
 
     # Sample PV power profile (kW): sinusoidal daytime generation over 7 days, with bad weather and noise
     pv_power = np.zeros(n_steps)
-    multipliers = [1.0, 0.9, 0.8, 1.0, 0.9, 0.3, 0.9]  # Day-specific factors for weather variation (e.g., cloudy days)
+    multipliers = [1.0, 0.9, 0.5, 0.8, 1.0, 0.6, 1.0]  # Day-specific factors for weather variation (e.g., cloudy days)
     for i, t in enumerate(time_steps):
         local_t = t % 24
         day = int(t // 24)
@@ -74,15 +74,16 @@ def load_data():
     #         grid_price_hourly[idx] = base_daily[d] + x + amplitude * np.sin(2 * np.pi * h / 24 - np.pi / 2)
 
     # Load hourly prices from CSV, convert €/MWh to €/kWh
-    price_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/20250407_20250413_MGP_PrezziZonali_Nord_1.csv')
+    price_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/20250407_20250413_MGP_PrezziZonali_Nord_1.csv', encoding='cp1252')
+    price_data['Euro/MWh'] = pd.to_numeric(price_data['Euro/MWh'], errors='coerce')
     grid_price_hourly = price_data['Euro/MWh'].values / 1000
 
     # Linear interpolation to 15-min resolution
     time_hourly = np.arange(0, 168, 1)
     time_quarter = np.arange(0, 168, 0.25)
     grid_price = np.interp(time_quarter, time_hourly, grid_price_hourly)
-    grid_buy_price = grid_price + 0.05
-    grid_sell_price = grid_price - 0.05
+    grid_buy_price = grid_price + 0.01
+    grid_sell_price = grid_price - 0.01
 
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
@@ -139,7 +140,7 @@ objective = cp.Maximize(revenue)
 
 # Problem
 problem = cp.Problem(objective, constraints)
-problem.solve(solver=cp.CBC, verbose=True)
+problem.solve(solver=cp.GUROBI, verbose=True)
 
 # Check status
 print("Status:", problem.status)
@@ -200,7 +201,7 @@ if problem.status == cp.OPTIMAL:
     day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon']
 
     # First Image: Energy Flows
-    plt.figure(figsize=(20, 20))  # Smaller size for better fit
+    plt.figure(figsize=(12, 12))  # Smaller size for better fit
 
     # Plot 1: PV Production with Grid Sold and Bought
     plt.subplot(3, 1, 1)
@@ -262,7 +263,7 @@ if problem.status == cp.OPTIMAL:
     plt.show()
 
     # Second Image: Financials
-    plt.figure(figsize=(20, 20))  # Smaller size for better fit
+    plt.figure(figsize=(12, 12))  # Smaller size for better fit
 
     # Plot 1: Electricity Price
     plt.subplot(3, 1, 1)
@@ -280,10 +281,10 @@ if problem.status == cp.OPTIMAL:
 
     # Plot 2: Grid sold revenue, buy cost, and BESS cost
     plt.subplot(3, 1, 2)
-    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Rev ($)', color='blue')
+    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Rev ($)', color='cyan')
     plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost ($)', color='red')
     plt.plot(time_steps, cost_bess_per_step, label='BESS Cost ($)', color='magenta')
-    plt.plot(time_steps, rev_pv_per_step, label='PV Self Revenue ($)', color='green')
+    plt.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost ($)', color='green')
     plt.xlabel('Time (h)')
     plt.ylabel('$/Step')
     plt.title('Revenues and Costs')
@@ -315,7 +316,6 @@ if problem.status == cp.OPTIMAL:
 
     plt.subplots_adjust(hspace=0.4)
     plt.tight_layout(pad=1.5)
-    
     # Save second image
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
     if not os.path.exists(output_dir):

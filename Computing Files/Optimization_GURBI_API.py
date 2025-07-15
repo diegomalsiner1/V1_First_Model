@@ -3,9 +3,9 @@ import pandas as pd
 import cvxpy as cp
 import matplotlib.pyplot as plt
 import os
-import asyncio
+import requests
 from datetime import date, timedelta
-from mercati_energetici import MGP
+from xml.etree import ElementTree as ET
 
 print("--- Running the REAL Optimization Script using GUROBI ---")
 
@@ -15,34 +15,51 @@ n_steps = len(time_steps)
 delta_t = 0.25  # hours
 time_indices = range(n_steps)
 
-async def fetch_prices_last_week():
-    async with MGP() as mgp:
-        # Print and accept terms (run once, then comment if needed)
-        print(await mgp.get_general_conditions())
-        print(await mgp.get_disclaimer())
+ENTSOE_TOKEN = "your-entsoe-security-token-here"  # Replace with your UUID token from transparency@entsoe.eu
 
-        # Calculate last full week (Monday to Sunday)
-        today = date.today()
-        if today.weekday() == 0:  # If today is Monday, previous week
-            last_monday = today - timedelta(days=7)
-        else:
-            last_monday = today - timedelta(days=today.weekday())
-        last_sunday = last_monday + timedelta(days=6)
+def fetch_prices_last_week():
+    # Calculate last full week (Monday to Sunday)
+    today = date.today()
+    if today.weekday() == 0:  # If today is Monday, previous week
+        last_monday = today - timedelta(days=7)
+    else:
+        last_monday = today - timedelta(days=today.weekday())
+    last_sunday = last_monday + timedelta(days=6)
+
+    period_start = last_monday.strftime('%Y%m%d') + '0000'
+    period_end = (last_sunday + timedelta(days=1)).strftime('%Y%m%d') + '0000'  # End is exclusive
+
+    url = "https://web-api.tp.entsoe.eu/api"
+    params = {
+        'securityToken': ENTSOE_TOKEN,
+        'documentType': 'A44',  # Day-ahead prices
+        'in_Domain': '10Y1001A1001A73I',  # Italy NORD bidding zone
+        'out_Domain': '10Y1001A1001A73I',
+        'periodStart': period_start,
+        'periodEnd': period_end
+    }
+
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        root = ET.fromstring(response.content)
 
         grid_price_hourly = np.zeros(168)  # 7 days * 24 hours
-        current_date = last_monday
-        day_index = 0
-        while current_date <= last_sunday:
-            try:
-                prices_dict = await mgp.get_prices(current_date, zone="NORD")
-                for hour in range(24):
-                    hourly_index = day_index * 24 + hour
-                    grid_price_hourly[hourly_index] = prices_dict.get(hour, 0) / 1000  # €/MWh to €/kWh, default 0 if missing
-            except Exception as e:
-                print(f"Error fetching prices for {current_date}: {e}")
-            current_date += timedelta(days=1)
-            day_index += 1
+        ns = {'ns': 'urn:iec62325.351:tc57wg16:451-3:publicationdocument:7:0'}  # Namespace
+        time_series = root.findall('.//ns:TimeSeries', ns)
+        hourly_index = 0
+        for ts in time_series:
+            points = ts.findall('ns:Period/ns:Point', ns)
+            for point in points:
+                position = int(point.find('ns:position', ns).text) - 1  # 1-based to 0-based
+                price = float(point.find('ns:price.amount', ns).text)
+                grid_price_hourly[hourly_index + position] = price / 1000  # €/MWh to €/kWh
+            hourly_index += len(points)  # Advance by day hours
+
         return grid_price_hourly
+    except Exception as e:
+        print(f"Error fetching ENTSO-E prices: {e}")
+        return np.zeros(168)  # Fallback
 
 def load_data():
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
@@ -93,8 +110,8 @@ def load_data():
         else:  # Standby days
             consumer_demand[i] = 70.0
 
-    # Dynamic fetch of grid prices using API
-    grid_price_hourly = asyncio.run(fetch_prices_last_week())
+    # Dynamic fetch of grid prices using ENTSO-E API
+    grid_price_hourly = fetch_prices_last_week()
 
     # Linear interpolation to 15-min resolution
     time_hourly = np.arange(0, 168, 1)

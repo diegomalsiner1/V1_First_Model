@@ -39,7 +39,7 @@ def load_data():
         local_t = t % 24
         day = int(t // 24)
         if 6 <= local_t <= 18:
-            amplitude = 1327 * multipliers[day]
+            amplitude = 2327 * multipliers[day]
             pv_power[i] = amplitude * np.sin(np.pi * (local_t - 6) / 12) + np.random.normal(0, 10)  # Realistic noise
         pv_power[i] = max(0, pv_power[i])  # Ensure non-negative
 
@@ -135,8 +135,8 @@ constraints += [SOC[n_steps] >= soc_initial]
 # Objective: Maximize net revenue with slack penalty
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
            cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
-           cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) -
-           cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, lcoe_bess) * delta_t) -
+           cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) +    #CHANGED TO PLUS 15.07
+           cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, grid_buy_price - lcoe_bess) * delta_t) - #ADDED GRID PRICE like in PV
            1e5 * cp.sum(slack))  # Penalty for unmet demand
 objective = cp.Maximize(revenue)
 
@@ -173,6 +173,7 @@ if problem.status == cp.OPTIMAL:
     cost_bess_per_step = []
     penalty_per_step = []
     total_net_per_step = []
+    bess_rev_per_step = []
     for t in time_indices:
         rev_pv = P_PV_consumer_vals[t] * (grid_buy_price[t] - lcoe_pv) * delta_t
         rev_sell = (P_PV_grid_vals[t] + P_BESS_grid_vals[t]) * grid_sell_price[t] * delta_t
@@ -186,6 +187,10 @@ if problem.status == cp.OPTIMAL:
         cost_bess_per_step.append(cost_bess)
         penalty_per_step.append(penalty)
         total_net_per_step.append(net_rev)
+
+        # BESS-specific revenue per step
+        bess_rev = P_BESS_grid_vals[t] * (grid_sell_price[t] - lcoe_bess) * delta_t + P_BESS_consumer_vals[t] * (grid_buy_price[t] - lcoe_bess) * delta_t
+        bess_rev_per_step.append(bess_rev)
 
     total_revenue = sum(total_net_per_step)
     print(f"Total Revenue: ${total_revenue:.2f}")
@@ -313,6 +318,8 @@ if problem.status == cp.OPTIMAL:
     ax2 = ax1.twinx()
     cumulative_revenue = np.cumsum(total_net_per_step)
     ax2.plot(time_steps, cumulative_revenue, label='Cum. Rev ($)', color='orange', linestyle='--')
+    cumulative_bess_revenue = np.cumsum(bess_rev_per_step)
+    ax2.plot(time_steps, cumulative_bess_revenue, label='Cum. BESS Rev ($)', color='blue', linestyle='-.')
     ax2.set_ylabel('Cum. Rev ($)')
     ax2.legend(loc='upper right')
 

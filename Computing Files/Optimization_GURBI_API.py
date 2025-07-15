@@ -15,7 +15,7 @@ n_steps = len(time_steps)
 delta_t = 0.25  # hours
 time_indices = range(n_steps)
 
-ENTSOE_TOKEN = "your-entsoe-security-token-here"  # Replace with your UUID token from transparency@entsoe.eu
+ENTSOE_TOKEN = "cd4a21d9-d58c-4b68-b233-ae5e0d8707f5"  # Replace with your UUID token from transparency@entsoe.eu
 
 def fetch_prices_last_week():
     # Calculate last full week (Monday to Sunday)
@@ -169,7 +169,8 @@ constraints += [SOC[n_steps] >= soc_initial]
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
            cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
            cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) +
-           cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, grid_buy_price - lcoe_bess) * delta_t) -
+           cp.sum(cp.multiply(P_BESS_consumer, grid_buy_price - lcoe_bess) * delta_t) +
+           cp.sum(cp.multiply(P_BESS_grid, grid_sell_price - lcoe_bess) * delta_t) - 
            1e5 * cp.sum(slack))  # Penalty for unmet demand
 objective = cp.Maximize(revenue)
 

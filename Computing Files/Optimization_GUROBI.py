@@ -63,18 +63,6 @@ def load_data():
         else:  # Standby days
             consumer_demand[i] = 70.0
 
-    # Grid prices (Eur/kWh): Synthetic based on GME weekly averages (~0.103 Eur/kWh for NORD), with daily/hourly variation
-    # Generate hourly first, then interpolate to 15-min
-    # hours = np.arange(0, 168)
-    # grid_price_hourly = np.zeros(168)
-    # base_daily = 0.103 + np.random.normal(0, 0.02, 7)  # Day-specific base shift for realism
-    # amplitude = 0.05  # Increased for volatility to encourage arbitrage
-    # for d in range(7):
-    #     for h in range(24):
-    #         idx = d * 24 + h
-    #         x = np.random.uniform(-0.005, 0.005)
-    #         grid_price_hourly[idx] = base_daily[d] + x + amplitude * np.sin(2 * np.pi * h / 24 - np.pi / 2)
-
     # Load hourly prices from CSV, convert €/MWh to €/kWh
     price_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/20250407_20250413_MGP_PrezziZonali_Nord_1.csv', encoding='cp1252')
     price_data['Euro/MWh'] = pd.to_numeric(price_data['Euro/MWh'], errors='coerce')
@@ -96,6 +84,12 @@ def load_data():
  lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
  eta_charge, eta_discharge, soc_initial, pi_consumer) = load_data()
 
+# Added for big-M constants in mutual exclusivity constraints
+max_pv = np.max(pv_power)
+max_demand = np.max(consumer_demand)
+M_bess = bess_power_limit
+M_grid = max(max_pv + bess_power_limit, max_demand + bess_power_limit)
+
 # Variables
 P_PV_consumer = cp.Variable(n_steps, nonneg=True)
 P_PV_BESS = cp.Variable(n_steps, nonneg=True)
@@ -106,6 +100,10 @@ P_grid_consumer = cp.Variable(n_steps, nonneg=True)
 P_grid_BESS = cp.Variable(n_steps, nonneg=True)
 SOC = cp.Variable(n_steps + 1, nonneg=True)
 slack = cp.Variable(n_steps, nonneg=True)  # Slack for consumer balance
+
+# Added binary variables for mutual exclusivity
+delta_bess = cp.Variable(n_steps, boolean=True)
+delta_grid = cp.Variable(n_steps, boolean=True)
 
 # Constraints
 constraints = []
@@ -131,6 +129,16 @@ constraints += [SOC[t] >= 0.05 * bess_capacity for t in range(n_steps + 1)]  # M
 
 # Force SOC at end >= initial for weekly sustainability and arbitrage incentive
 constraints += [SOC[n_steps] >= soc_initial]
+
+# Added constraints for mutual exclusivity of BESS charge/discharge (charge when delta_bess=1, discharge when delta_bess=0)
+for t in time_indices:
+    constraints += [P_PV_BESS[t] + P_grid_BESS[t] <= M_bess * delta_bess[t]]
+    constraints += [P_BESS_consumer[t] + P_BESS_grid[t] <= M_bess * (1 - delta_bess[t])]
+
+# Added constraints for mutual exclusivity of Grid buy/sell (buy when delta_grid=1, sell when delta_grid=0)
+for t in time_indices:
+    constraints += [P_grid_consumer[t] + P_grid_BESS[t] <= M_grid * delta_grid[t]]
+    constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M_grid * (1 - delta_grid[t])]
 
 # Objective: Maximize net revenue with slack penalty
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +

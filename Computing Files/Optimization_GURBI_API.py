@@ -3,11 +3,14 @@ import pandas as pd
 import cvxpy as cp
 import matplotlib.pyplot as plt
 import os
+import random
+from datetime import datetime, timedelta, timezone
 import requests
-from datetime import date, timedelta
-from xml.etree import ElementTree as ET
+from xml.etree import ElementTree
 
-print("--- Running the REAL Optimization Script using GUROBI and API to ENTSO-E ---")
+# TEST
+
+print("--- Running the REAL Optimization Script using GUROBI ---")
 
 # Time framework: 1 week (168 hours), 15-minute intervals (672 steps)
 time_steps = np.arange(0, 168, 0.25)
@@ -15,62 +18,49 @@ n_steps = len(time_steps)
 delta_t = 0.25  # hours
 time_indices = range(n_steps)
 
-#ENTSOE_TOKEN = "cd4a21d9-d58c-4b68-b233-ae5e0d8707f5"  # Replace with your UUID token from transparency@entsoe.eu
+# ENTSO-E API token and bidding zone
+ENTSOE_TOKEN = 'cd4a21d9-d58c-4b68-b233-ae5e0d8707f5'
+BIDDING_ZONE = '10Y1001A1001A73I'
 
-ENTSOE_TOKEN = "cd4a21d9-d58c-4b68-b233-ae5e0d8707f5"  # Replace with your UUID token from transparency@entsoe.eu
-
-def fetch_prices_last_week():
-    # For testing: Use a known past week with data
-    last_monday = date(2025, 1,12)
-    last_sunday = last_monday + timedelta(days=6)
-
-    # Original dynamic (uncomment for real, but ensure dates are past/current)
-    # today = date.today()
-    # last_monday = today - timedelta(days=today.weekday() + 7)
-    # last_sunday = last_monday + timedelta(days=6)
-
-    period_start = last_monday.strftime('%Y%m%d') + '0000'
-    period_end = (last_sunday + timedelta(days=1)).strftime('%Y%m%d') + '0000'
-
-    url = "https://web-api.tp.entsoe.eu/api"
-    params = {
-        'securityToken': ENTSOE_TOKEN,
-        'documentType': 'A44',
-        'in_Domain': '10Y1001A1001A73I',  #ITALY NORD: 10Y1001A1001A73I
-        'out_Domain': '10Y1001A1001A73I', #CH TOTAL: 10YCH-SWISSGRIDZ
-        'periodStart': period_start,
-        'periodEnd': period_end
-    }
-
-    try:
-        response = requests.get(url, params=params)
-        print(f"Status Code: {response.status_code}")  # Debug: Should be 200
-        print(f"Response Snippet: {response.text[:1000]}")  # Debug: See XML
-        response.raise_for_status()
-        root = ET.fromstring(response.content)
-
-        grid_price_hourly = np.zeros(168)
-        ns = {'ns': 'urn:iec62325.351:tc57wg16:451-3:publicationdocument:7:0'}
-        time_series = root.findall('.//ns:TimeSeries', ns)
-        hourly_index = 0
-        for ts in time_series:
-            points = ts.findall('ns:Period/ns:Point', ns)
-            daily_prices = np.zeros(96)  # 15-min prices per day
-            for point in points:
-                position = int(point.find('ns:position', ns).text) - 1
-                price = float(point.find('ns:price.amount', ns).text) / 1000
-                daily_prices[position] = price
-            # Average to hourly (4 15-min per hour)
-            for h in range(24):
-                start = h * 4
-                avg_price = np.mean(daily_prices[start:start+4])
-                grid_price_hourly[hourly_index + h] = avg_price
-            hourly_index += 24
-
-        return grid_price_hourly
-    except Exception as e:
-        print(f"Error fetching ENTSO-E prices: {e}")
-        return np.zeros(168)
+# Added function to fetch day-ahead prices from ENTSO-E
+def get_dayahead_prices(api_key: str, area_code: str, start: datetime = None, end: datetime = None):
+    """
+    Get day-ahead prices from ENTSO-E API.
+    Adapted from https://gist.github.com/jpulakka/f866e37dcedeede31e96a34e9f06ed7a
+    """
+    if not start:
+        start = datetime.now(timezone.utc)
+    elif start.tzinfo and start.tzinfo != timezone.utc:
+        start = start.astimezone(timezone.utc)
+    if not end:
+        end = start + timedelta(days=1)
+    elif end.tzinfo and end.tzinfo != timezone.utc:
+        end = end.astimezone(timezone.utc)
+    fmt = '%Y%m%d%H00'
+    url = f'https://web-api.tp.entsoe.eu/api?securityToken={api_key}&documentType=A44&in_Domain={area_code}' \
+          f'&out_Domain={area_code}&periodStart={start.strftime(fmt)}&periodEnd={end.strftime(fmt)}'
+    response = requests.get(url)
+    response.raise_for_status()
+    xml_str = response.text
+    result = {}
+    for child in ElementTree.fromstring(xml_str):
+        if child.tag.endswith("TimeSeries"):
+            for ts_child in child:
+                if ts_child.tag.endswith("Period"):
+                    for pe_child in ts_child:
+                        if pe_child.tag.endswith("timeInterval"):
+                            for ti_child in pe_child:
+                                if ti_child.tag.endswith("start"):
+                                    start_time = datetime.strptime(ti_child.text, '%Y-%m-%dT%H:%MZ').replace(tzinfo=timezone.utc)
+                        elif pe_child.tag.endswith("Point"):
+                            for po_child in pe_child:
+                                if po_child.tag.endswith("position"):
+                                    delta = int(po_child.text) - 1
+                                    time = start_time + timedelta(hours=delta)
+                                elif po_child.tag.endswith("price.amount"):
+                                    price = float(po_child.text)
+                                    result[time] = price
+    return result
 
 def load_data():
     # Load LCOE for PV from PV_LCOE.csv, ignoring comment lines
@@ -90,39 +80,18 @@ def load_data():
     soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])
     pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])
 
-    # Sample PV power profile (kW): sinusoidal daytime generation over 7 days, with bad weather and noise
-    pv_power = np.zeros(n_steps)
-    multipliers = [1.0, 0.9, 0.85, 0.8, 1.0, 0.6, 1.0]  # Day-specific factors for weather variation (e.g., cloudy days)
-    for i, t in enumerate(time_steps):
-        local_t = t % 24
-        day = int(t // 24)
-        if 6 <= local_t <= 18:
-            amplitude = 1327 * multipliers[day]
-            pv_power[i] = amplitude * np.sin(np.pi * (local_t - 6) / 12) + np.random.normal(0, 10)  # Realistic noise
-        pv_power[i] = max(0, pv_power[i])  # Ensure non-negative
+    # Fetch grid prices from ENTSO-E for the last 7 days (previous complete week)
+    utc_now = datetime.now(timezone.utc)
+    start_date = (utc_now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+    end_date = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    prices_dict = get_dayahead_prices(ENTSOE_TOKEN, BIDDING_ZONE, start_date, end_date)
+    sorted_times = sorted(prices_dict.keys())
+    if len(sorted_times) != 168:
+        raise ValueError(f"Expected 168 hourly prices, got {len(sorted_times)}")
+    grid_price_hourly = np.array([prices_dict[t] for t in sorted_times]) / 1000  # Convert to Eur/kWh
 
-    # Consumer demand (kW): 5 production days (Mon-Fri) with ramps, 2 standby days (Sat-Sun) flat 70 kW
-    consumer_demand = np.zeros(n_steps)
-    for i, t in enumerate(time_steps):
-        local_t = t % 24
-        day = int(t // 24)
-        if day < 5:  # Production days
-            base = 200.0
-            if 6 <= local_t < 8:
-                add = 800.0 * (local_t - 6) / 2
-                consumer_demand[i] = base + add
-            elif 8 <= local_t <= 16:
-                consumer_demand[i] = 1000.0
-            elif 16 < local_t <= 18:
-                add = 800.0 * (18 - local_t) / 2
-                consumer_demand[i] = base + add
-            else:
-                consumer_demand[i] = base
-        else:  # Standby days
-            consumer_demand[i] = 100.0
-
-    # Dynamic fetch of grid prices using ENTSO-E API
-    grid_price_hourly = fetch_prices_last_week()
+    # Get the weekday of the start date (0=Monday, ..., 6=Sunday)
+    start_weekday = sorted_times[0].weekday()
 
     # Linear interpolation to 15-min resolution
     time_hourly = np.arange(0, 168, 1)
@@ -130,6 +99,39 @@ def load_data():
     grid_price = np.interp(time_quarter, time_hourly, grid_price_hourly)
     grid_buy_price = grid_price + 0.01
     grid_sell_price = grid_price - 0.01
+
+    # Sample PV power profile (kW): sinusoidal daytime generation over 7 days, with bad weather and noise
+    pv_power = np.zeros(n_steps)
+    multipliers = [1.0, 0.9, 0.5, 0.8, 1.0, 0.6, 1.0]
+    random.shuffle(multipliers)  # Randomly assign multipliers to days
+    for i, t in enumerate(time_steps):
+        local_t = t % 24
+        day = int(t // 24)
+        if 6 <= local_t <= 18:
+            amplitude = 2327 * multipliers[day]
+            pv_power[i] = amplitude * np.sin(np.pi * (local_t - 6) / 12) + np.random.normal(0, 10)  # Realistic noise
+        pv_power[i] = max(0, pv_power[i])  # Ensure non-negative
+
+    # Consumer demand (kW): production days on weekdays, standby on weekends, shifted to match actual days
+    consumer_demand = np.zeros(n_steps)
+    for i, t in enumerate(time_steps):
+        local_t = t % 24
+        day = int(t // 24)
+        actual_weekday = (start_weekday + day) % 7  # 0=Mon ... 6=Sun
+        if actual_weekday < 5:  # Weekdays (Mon-Fri): production days
+            base = 200.0
+            if 6 <= local_t < 8:
+                add = 1000.0 * (local_t - 6) / 2
+                consumer_demand[i] = base + add
+            elif 8 <= local_t <= 16:
+                consumer_demand[i] = 1200.0
+            elif 16 < local_t <= 18:
+                add = 1000.0 * (18 - local_t) / 2
+                consumer_demand[i] = base + add
+            else:
+                consumer_demand[i] = base
+        else:  # Weekends (Sat-Sun): standby days
+            consumer_demand[i] = 70.0
 
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
@@ -139,6 +141,12 @@ def load_data():
 (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
  lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
  eta_charge, eta_discharge, soc_initial, pi_consumer) = load_data()
+
+# Added for big-M constants in mutual exclusivity constraints
+max_pv = np.max(pv_power)
+max_demand = np.max(consumer_demand)
+M_bess = bess_power_limit
+M_grid = max(max_pv + bess_power_limit, max_demand + bess_power_limit)
 
 # Variables
 P_PV_consumer = cp.Variable(n_steps, nonneg=True)
@@ -150,6 +158,10 @@ P_grid_consumer = cp.Variable(n_steps, nonneg=True)
 P_grid_BESS = cp.Variable(n_steps, nonneg=True)
 SOC = cp.Variable(n_steps + 1, nonneg=True)
 slack = cp.Variable(n_steps, nonneg=True)  # Slack for consumer balance
+
+# Added binary variables for mutual exclusivity
+delta_bess = cp.Variable(n_steps, boolean=True)
+delta_grid = cp.Variable(n_steps, boolean=True)
 
 # Constraints
 constraints = []
@@ -169,19 +181,28 @@ for t in time_indices:
 # SOC dynamics
 constraints += [SOC[0] == soc_initial]
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
-                (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)]
+                (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)] #OPTIONAL ADD SELF DISCHARGE OF BATTERY
 constraints += [SOC[t] <= bess_capacity for t in range(n_steps + 1)]
-constraints += [SOC[t] >= 0.1 * bess_capacity for t in range(n_steps + 1)]  # Minimum SOC constraint
+constraints += [SOC[t] >= 0.05 * bess_capacity for t in range(n_steps + 1)]  # Minimum SOC constraint 5% of BESS_CAPACITY
 
 # Force SOC at end >= initial for weekly sustainability and arbitrage incentive
 constraints += [SOC[n_steps] >= soc_initial]
 
+# Added constraints for mutual exclusivity of BESS charge/discharge (charge when delta_bess=1, discharge when delta_bess=0)
+for t in time_indices:
+    constraints += [P_PV_BESS[t] + P_grid_BESS[t] <= M_bess * delta_bess[t]]
+    constraints += [P_BESS_consumer[t] + P_BESS_grid[t] <= M_bess * (1 - delta_bess[t])]
+
+# Added constraints for mutual exclusivity of Grid buy/sell (buy when delta_grid=1, sell when delta_grid=0)
+for t in time_indices:
+    constraints += [P_grid_consumer[t] + P_grid_BESS[t] <= M_grid * delta_grid[t]]
+    constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M_grid * (1 - delta_grid[t])]
+
 # Objective: Maximize net revenue with slack penalty
 revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
            cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
-           cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) +
-           cp.sum(cp.multiply(P_BESS_consumer, grid_buy_price - lcoe_bess) * delta_t) +
-           cp.sum(cp.multiply(P_BESS_grid, grid_sell_price - lcoe_bess) * delta_t) - 
+           cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) +    #CHANGED TO PLUS 15.07
+           cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, grid_buy_price - lcoe_bess) * delta_t) - #ADDED GRID PRICE like in PV
            1e5 * cp.sum(slack))  # Penalty for unmet demand
 objective = cp.Maximize(revenue)
 
@@ -238,7 +259,7 @@ if problem.status == cp.OPTIMAL:
         bess_rev_per_step.append(bess_rev)
 
     total_revenue = sum(total_net_per_step)
-    print(f"Total Revenue: Euro{total_revenue:.2f}")
+    print(f"Total Revenue: Eur{total_revenue:.2f}")
 
     # Check for unmet demand
     print("Time steps with unmet demand (kW):")
@@ -258,7 +279,7 @@ if problem.status == cp.OPTIMAL:
     # Plot 1: PV Production with Grid Sold and Bought
     plt.subplot(3, 1, 1)
     plt.plot(time_steps, pv_power, label='PV Gen (kW)', color='orange')
-    plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='cyan')
+    plt.plot(time_steps, P_grid_sold, label='Grid Sold (kW)', color='blue')
     plt.plot(time_steps, P_grid_bought, label='Grid Bought (kW)', color='magenta')
     plt.xlabel('Time (h)')
     plt.ylabel('Power (kW)')
@@ -319,11 +340,11 @@ if problem.status == cp.OPTIMAL:
 
     # Plot 1: Electricity Price
     plt.subplot(3, 1, 1)
-    plt.plot(time_steps, grid_buy_price, label='Grid Price (Euro/kWh)', color='blue')
+    plt.plot(time_steps, grid_buy_price, label='Grid Price (Eur/kWh)', color='blue')
     plt.plot(time_steps, np.full(n_steps, lcoe_pv), label='PV LCOE', color='orange', linestyle='--')
     plt.plot(time_steps, np.full(n_steps, lcoe_bess), label='BESS LCOE', color='green', linestyle='--')
     plt.xlabel('Time (h)')
-    plt.ylabel('Price (Euro/kWh)')
+    plt.ylabel('Price (Eur/kWh)')
     plt.title('Prices and LCOEs')
     plt.legend(loc='best')
     plt.grid(True)
@@ -333,12 +354,12 @@ if problem.status == cp.OPTIMAL:
 
     # Plot 2: Grid sold revenue, buy cost, and BESS cost
     plt.subplot(3, 1, 2)
-    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Rev (Euro)', color='cyan')
-    plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost (Euro)', color='red')
-    plt.plot(time_steps, cost_bess_per_step, label='BESS Cost (Euro)', color='magenta')
-    plt.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost (Euro)', color='green')
+    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Rev (Eur)', color='cyan')
+    plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost (Eur)', color='red')
+    plt.plot(time_steps, cost_bess_per_step, label='BESS Cost (Eur)', color='magenta')
+    plt.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost (Eur)', color='green')
     plt.xlabel('Time (h)')
-    plt.ylabel('Euro/Step')
+    plt.ylabel('Eur/Step')
     plt.title('Revenues and Costs')
     plt.legend(loc='best')
     plt.grid(True)
@@ -349,9 +370,9 @@ if problem.status == cp.OPTIMAL:
     # Plot 3: Revenue at each timestep and cumulative revenue
     plt.subplot(3, 1, 3)
     ax1 = plt.gca()
-    ax1.plot(time_steps, total_net_per_step, label='Rev per Step (Euro)', color='purple')
+    ax1.plot(time_steps, total_net_per_step, label='Rev per Step (Eur)', color='purple')
     ax1.set_xlabel('Time (h)')
-    ax1.set_ylabel('Rev per Step (Euro)')
+    ax1.set_ylabel('Rev per Step (Eur)')
     ax1.set_title('Timestep and Cum. Revenue')
     ax1.legend(loc='upper left')
     ax1.grid(True)
@@ -362,10 +383,10 @@ if problem.status == cp.OPTIMAL:
 
     ax2 = ax1.twinx()
     cumulative_revenue = np.cumsum(total_net_per_step)
-    ax2.plot(time_steps, cumulative_revenue, label='Cum. Rev (Euro)', color='orange', linestyle='--')
+    ax2.plot(time_steps, cumulative_revenue, label='Cum. Rev (Eur)', color='orange', linestyle='--')
     cumulative_bess_revenue = np.cumsum(bess_rev_per_step)
-    ax2.plot(time_steps, cumulative_bess_revenue, label='Cum. BESS Rev (Euro)', color='blue', linestyle='-.')
-    ax2.set_ylabel('Cum. Rev (Euro)')
+    ax2.plot(time_steps, cumulative_bess_revenue, label='Cum. BESS Rev (Eur)', color='blue', linestyle='-.')
+    ax2.set_ylabel('Cum. Rev (Eur)')
     ax2.legend(loc='upper right')
 
     plt.subplots_adjust(hspace=0.4)
@@ -374,6 +395,5 @@ if problem.status == cp.OPTIMAL:
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, 'Financial_Metrics.png'))
+    plt.savefig(os.path.join(output_dir, 'Financials.png'))
     plt.show()
-

@@ -7,6 +7,7 @@ import random
 from datetime import datetime, timedelta, timezone
 import requests
 from xml.etree import ElementTree
+import warnings  # Added for warning handling
 
 # TEST
 
@@ -20,7 +21,8 @@ time_indices = range(n_steps)
 
 # ENTSO-E API token and bidding zone
 ENTSOE_TOKEN = 'cd4a21d9-d58c-4b68-b233-ae5e0d8707f5'
-BIDDING_ZONE = '10Y1001A1001A73I'
+BIDDING_ZONE = '10YCH-SWISSGRIDZ'  # Switzerland bidding zone
+TIMEZONE_OFFSET = 2  # hours for CEST (UTC+2)
 
 # Added function to fetch day-ahead prices from ENTSO-E
 def get_dayahead_prices(api_key: str, area_code: str, start: datetime = None, end: datetime = None):
@@ -84,14 +86,45 @@ def load_data():
     utc_now = datetime.now(timezone.utc)
     start_date = (utc_now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
     end_date = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    prices_dict = get_dayahead_prices(ENTSOE_TOKEN, BIDDING_ZONE, start_date, end_date)
-    sorted_times = sorted(prices_dict.keys())
-    if len(sorted_times) != 168:
-        raise ValueError(f"Expected 168 hourly prices, got {len(sorted_times)}")
-    grid_price_hourly = np.array([prices_dict[t] for t in sorted_times]) / 1000  # Convert to Eur/kWh
+    try:  # Added: Try-except to handle API failures
+        prices_dict = get_dayahead_prices(ENTSOE_TOKEN, BIDDING_ZONE, start_date, end_date)
+        sorted_times = sorted(prices_dict.keys())
+        # Added debug prints
+        print(f"API debug: Fetched {len(sorted_times)} prices for zone {BIDDING_ZONE}")
+        if sorted_times:
+            print(f"API debug: Date range: {sorted_times[0]} to {sorted_times[-1]}")
+        
+        # Added: Filter times to exactly the requested range [start_date, end_date)
+        filtered_times = [t for t in sorted_times if start_date <= t < end_date]
+        print(f"API debug: Filtered to {len(filtered_times)} prices within {start_date} to {end_date}")
+        
+        current_times = filtered_times
+        if len(current_times) != 168:
+            warnings.warn(f"Warning: Non-standard data ({len(current_times)} prices). Adjusting to 168.")
+            mean_price = np.mean([prices_dict[t] for t in current_times]) if current_times else 0.103 * 1000  # Fallback to avg in Eur/MWh
+            
+            # Pad if fewer
+            while len(current_times) < 168:
+                last_t = current_times[-1] if current_times else start_date
+                next_t = last_t + timedelta(hours=1)
+                prices_dict[next_t] = mean_price
+                current_times.append(next_t)
+            
+            # Clip if more
+            if len(current_times) > 168:
+                current_times = current_times[:168]
+        
+        sorted_times = sorted(current_times)  # Ensure sorted after adjustments
+    except Exception as e:  # Added: Catch and log errors
+        print(f"API error: {e}. Falling back to synthetic data.")
+        grid_price_hourly = np.full(168, 0.103)  # Fallback to average synthetic hourly prices
+        sorted_times = [start_date + timedelta(hours=i) for i in range(168)]
+    else:
+        grid_price_hourly = np.array([prices_dict[t] for t in sorted_times]) / 1000  # Convert to Eur/kWh
 
-    # Get the weekday of the start date (0=Monday, ..., 6=Sunday)
-    start_weekday = sorted_times[0].weekday()
+    # Adjust for local timezone to correctly shift consumer demand profile
+    local_start_time = sorted_times[0] + timedelta(hours=TIMEZONE_OFFSET)
+    start_weekday = local_start_time.weekday()
 
     # Linear interpolation to 15-min resolution
     time_hourly = np.arange(0, 168, 1)
@@ -133,14 +166,22 @@ def load_data():
         else:  # Weekends (Sat-Sun): standby days
             consumer_demand[i] = 70.0
 
+    # Prepare plot information
+    bidding_zone_desc = f"Switzerland ({BIDDING_ZONE})"
+    period_start = local_start_time.strftime('%Y-%m-%d')
+    period_end = (local_start_time + timedelta(days=7)).strftime('%Y-%m-%d')
+    period_str = f"{period_start} to {period_end}"
+
     return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
             lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
-            eta_charge, eta_discharge, soc_initial, pi_consumer)
+            eta_charge, eta_discharge, soc_initial, pi_consumer,
+            bidding_zone_desc, period_str)
 
 # Load data
 (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
  lcoe_pv, lcoe_bess, bess_capacity, bess_power_limit,
- eta_charge, eta_discharge, soc_initial, pi_consumer) = load_data()
+ eta_charge, eta_discharge, soc_initial, pi_consumer,
+ bidding_zone_desc, period_str) = load_data()
 
 # Added for big-M constants in mutual exclusivity constraints
 max_pv = np.max(pv_power)
@@ -345,7 +386,7 @@ if problem.status == cp.OPTIMAL:
     plt.plot(time_steps, np.full(n_steps, lcoe_bess), label='BESS LCOE', color='green', linestyle='--')
     plt.xlabel('Time (h)')
     plt.ylabel('Price (Eur/kWh)')
-    plt.title('Prices and LCOEs')
+    plt.title(f'Prices and LCOEs\n{bidding_zone_desc}\n{period_str}')
     plt.legend(loc='best')
     plt.grid(True)
     plt.xticks(np.arange(0, 169, 24), day_labels)

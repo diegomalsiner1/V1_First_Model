@@ -260,11 +260,15 @@ for t in time_indices:  # Looping over time steps
     constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M_grid * (1 - delta_grid[t])]
 
 # Defining the objective: Maximize revenue (various terms for profits/costs)
-revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +  # PV to consumer avoided cost
-           cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -  # Sell to grid revenue
-           cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) +  # Grid buy cost (negative)
-           cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, grid_buy_price - lcoe_bess) * delta_t) -  # BESS usage revenue
-           1e5 * cp.sum(slack))  # Heavy penalty for slack (unmet demand)
+revenue = (
+    cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +  # PV to consumer: saved buy - PV cost
+    cp.sum(cp.multiply(P_PV_grid, grid_sell_price - lcoe_pv) * delta_t) +  # PV to grid: sell revenue - PV cost
+    cp.sum(cp.multiply(P_PV_BESS, - lcoe_pv) * delta_t) +  # PV to BESS: - PV cost (charging)
+    cp.sum(cp.multiply(P_BESS_consumer, grid_buy_price - lcoe_bess) * delta_t) +  # BESS to consumer: saved buy - BESS cost
+    cp.sum(cp.multiply(P_BESS_grid, grid_sell_price - lcoe_bess) * delta_t) -  # BESS to grid: sell revenue - BESS cost
+    cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) -  # Grid buys: - buy cost
+    1e5 * cp.sum(slack)  # Penalty
+)
 objective = cp.Maximize(revenue)  # Setting maximization objective
 
 # Creating the optimization problem with objective and constraints

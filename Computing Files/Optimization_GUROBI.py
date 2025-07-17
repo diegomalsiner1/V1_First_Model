@@ -141,11 +141,15 @@ for t in time_indices:
     constraints += [P_PV_grid[t] + P_BESS_grid[t] <= M_grid * (1 - delta_grid[t])]
 
 # Objective: Maximize net revenue with slack penalty
-revenue = (cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +
-           cp.sum(cp.multiply(P_PV_grid + P_BESS_grid, grid_sell_price) * delta_t) -
-           cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) +    #CHANGED TO PLUS 15.07
-           cp.sum(cp.multiply(P_BESS_consumer + P_BESS_grid, grid_buy_price - lcoe_bess) * delta_t) - #ADDED GRID PRICE like in PV
-           1e5 * cp.sum(slack))  # Penalty for unmet demand
+revenue = (
+    cp.sum(cp.multiply(P_PV_consumer, grid_buy_price - lcoe_pv) * delta_t) +  # PV to consumer: saved buy - PV cost
+    cp.sum(cp.multiply(P_PV_grid, grid_sell_price - lcoe_pv) * delta_t) +  # PV to grid: sell revenue - PV cost
+    cp.sum(cp.multiply(P_PV_BESS, - lcoe_pv) * delta_t) +  # PV to BESS: - PV cost (charging)
+    cp.sum(cp.multiply(P_BESS_consumer, grid_buy_price - lcoe_bess) * delta_t) +  # BESS to consumer: saved buy - BESS cost
+    cp.sum(cp.multiply(P_BESS_grid, grid_sell_price - lcoe_bess) * delta_t) -  # BESS to grid: sell revenue - BESS cost
+    cp.sum(cp.multiply(P_grid_consumer + P_grid_BESS, grid_buy_price) * delta_t) -  # Grid buys: - buy cost
+    1e5 * cp.sum(slack)  # Penalty
+)
 objective = cp.Maximize(revenue)
 
 # Problem

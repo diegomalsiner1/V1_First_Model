@@ -147,6 +147,7 @@ def load_data():
     grid_sell_price = grid_price - 0.01  # Subtracting margin for sell price
 
     # Generating sample PV power profile: Sinusoidal daytime generation over 7 days with variations
+    plant_size = 4000
     pv_power = np.zeros(n_steps)  # Initializing zero array for PV power (672 steps)
     multipliers = [1.0, 0.9, 0.5, 0.8, 1.0, 0.6, 1.0]  # Day-specific weather multipliers
     random.shuffle(multipliers)  # Randomly shuffling multipliers for realism
@@ -154,7 +155,7 @@ def load_data():
         local_t = t % 24  # Local time within day (0-23.75)
         day = int(t // 24)  # Day index (0-6)
         if 6 <= local_t <= 18:  # Daytime hours for PV generation
-            amplitude = 2327 * multipliers[day]  # Scaling amplitude by multiplier
+            amplitude = plant_size * multipliers[day]  # Scaling amplitude by multiplier
             # Sinusoidal generation with noise
             pv_power[i] = amplitude * np.sin(np.pi * (local_t - 6) / 12) + np.random.normal(0, 10)
         pv_power[i] = max(0, pv_power[i])  # Ensuring non-negative power
@@ -240,7 +241,7 @@ constraints += [SOC[0] == soc_initial]  # Initial SOC
 constraints += [SOC[t+1] == SOC[t] + eta_charge * (P_PV_BESS[t] + P_grid_BESS[t]) * delta_t -
                 (P_BESS_consumer[t] + P_BESS_grid[t]) / eta_discharge * delta_t for t in range(n_steps)]
 constraints += [SOC[t] <= bess_capacity for t in range(n_steps + 1)]  # Upper SOC bound
-constraints += [SOC[t] >= 0.05 * bess_capacity for t in range(n_steps + 1)]  # Lower SOC bound (5%)
+constraints += [SOC[t] >= 0.1 * bess_capacity for t in range(n_steps + 1)]  # Lower SOC bound (10%)
 
 # Ensuring final SOC >= initial for sustainability
 constraints += [SOC[n_steps] >= soc_initial]

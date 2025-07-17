@@ -274,7 +274,7 @@ objective = cp.Maximize(revenue)  # Setting maximization objective
 # Creating the optimization problem with objective and constraints
 problem = cp.Problem(objective, constraints)
 # Solving the problem using Gurobi solver with verbose output
-problem.solve(solver=cp.GUROBI, verbose=True)
+problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.0001) # 0.025% Error Tolerance for faster COMPUTATION TESTRUNS
 
 # Checking the solver status
 print("Status:", problem.status)
@@ -298,38 +298,32 @@ if problem.status == cp.OPTIMAL:  # Proceeding only if optimal solution found
     P_grid_sold = P_PV_grid_vals + P_BESS_grid_vals  # Total sold to grid
     P_grid_bought = P_grid_consumer_vals + P_grid_BESS_vals  # Total bought from grid
 
-    # Computing per-step revenues and costs for plotting
-    rev_pv_per_step = []  # Initializing lists
-    rev_sell_per_step = []
-    cost_grid_per_step = []
-    cost_bess_per_step = []
-    penalty_per_step = []
-    total_net_per_step = []
-    bess_rev_per_step = []
+    # Computing per-step revenues and costs for plotting, aligned to objective terms
+    pv_to_consumer_rev = []  # PV to consumer: saved buy - PV cost
+    pv_to_grid_rev = []  # PV to grid: sell - PV cost
+    pv_to_bess_cost = []  # PV to BESS: - PV cost
+    bess_to_consumer_rev = []  # BESS to consumer: saved buy - BESS cost
+    bess_to_grid_rev = []  # BESS to grid: sell - BESS cost
+    grid_buy_cost = []  # Grid buys: - buy cost (for consumer + BESS charge)
+    penalty_per_step = []  # Penalty
+    total_net_per_step = []  # Total net per step
     for t in time_indices:  # Looping over time steps
-        # PV to consumer revenue (avoided grid cost minus LCOE)
-        rev_pv = P_PV_consumer_vals[t] * (grid_buy_price[t] - lcoe_pv) * delta_t
-        # Sell to grid revenue
-        rev_sell = (P_PV_grid_vals[t] + P_BESS_grid_vals[t]) * grid_sell_price[t] * delta_t
-        # Grid buy cost (negative)
-        cost_grid = - (P_grid_consumer_vals[t] + P_grid_BESS_vals[t]) * grid_buy_price[t] * delta_t
-        # BESS usage cost (LCOE deduction)
-        cost_bess = - (P_BESS_consumer_vals[t] + P_BESS_grid_vals[t]) * lcoe_bess * delta_t
-        # Penalty for slack
+        pv_cons = P_PV_consumer_vals[t] * (grid_buy_price[t] - lcoe_pv) * delta_t
+        pv_grid = P_PV_grid_vals[t] * (grid_sell_price[t] - lcoe_pv) * delta_t
+        pv_bess = P_PV_BESS_vals[t] * (- lcoe_pv) * delta_t
+        bess_cons = P_BESS_consumer_vals[t] * (grid_buy_price[t] - lcoe_bess) * delta_t
+        bess_grid = P_BESS_grid_vals[t] * (grid_sell_price[t] - lcoe_bess) * delta_t
+        grid_cost = - (P_grid_consumer_vals[t] + P_grid_BESS_vals[t]) * grid_buy_price[t] * delta_t
         penalty = -1e5 * slack_vals[t]
-        # Net revenue per step
-        net_rev = rev_pv + rev_sell + cost_grid + cost_bess + penalty
-        # Appending to lists
-        rev_pv_per_step.append(rev_pv)
-        rev_sell_per_step.append(rev_sell)
-        cost_grid_per_step.append(cost_grid)
-        cost_bess_per_step.append(cost_bess)
+        net_rev = pv_cons + pv_grid + pv_bess + bess_cons + bess_grid + grid_cost + penalty
+        pv_to_consumer_rev.append(pv_cons)
+        pv_to_grid_rev.append(pv_grid)
+        pv_to_bess_cost.append(pv_bess)
+        bess_to_consumer_rev.append(bess_cons)
+        bess_to_grid_rev.append(bess_grid)
+        grid_buy_cost.append(grid_cost)
         penalty_per_step.append(penalty)
         total_net_per_step.append(net_rev)
-
-        # BESS-specific revenue
-        bess_rev = P_BESS_grid_vals[t] * (grid_sell_price[t] - lcoe_bess) * delta_t + P_BESS_consumer_vals[t] * (grid_buy_price[t] - lcoe_bess) * delta_t
-        bess_rev_per_step.append(bess_rev)
 
     # Calculating total revenue
     total_revenue = sum(total_net_per_step)
@@ -411,46 +405,54 @@ if problem.status == cp.OPTIMAL:  # Proceeding only if optimal solution found
     plt.savefig(os.path.join(output_dir, 'Energy_Flows.png'))  # Saving PNG
     plt.show()  # Showing the plot
 
-    # Creating second figure: Financials
+    # Creating second figure: Financials (adapted)
     plt.figure(figsize=(12, 12))  # Figure size
 
-    # Subplot 1: Prices and LCOEs
+    # Subplot 1: Energy Market Price (kept as Prices and LCOEs, but focused on grid price)
     plt.subplot(3, 1, 1)  # First subplot
-    plt.plot(time_steps, grid_buy_price, label='Grid Price (Eur/kWh)', color='blue')  # Plotting buy price
+    plt.plot(time_steps, grid_buy_price, label='Grid Buy Price (Eur/kWh)', color='blue')  # Plotting buy price
+    plt.plot(time_steps, grid_sell_price, label='Grid Sell Price (Eur/kWh)', color='cyan', linestyle='--')  # Adding sell price for completeness
     plt.plot(time_steps, np.full(n_steps, lcoe_pv), label='PV LCOE', color='orange', linestyle='--')  # PV LCOE line
     plt.plot(time_steps, np.full(n_steps, lcoe_bess), label='BESS LCOE', color='green', linestyle='--')  # BESS LCOE line
     plt.xlabel('Time (h)')  # X-label
     plt.ylabel('Price (Eur/kWh)')  # Y-label
     # Title with bidding zone and period info
-    plt.title(f'Prices and LCOEs\n{bidding_zone_desc}\n{period_str}')
+    plt.title(f'Energy Market Prices\n{bidding_zone_desc}\n{period_str}')
     plt.legend(loc='best')  # Legend
     plt.grid(True)  # Grid
     plt.xticks(np.arange(0, 169, 24), day_labels)  # X-ticks with dynamic day labels
     for d in range(1, 7):  # Day boundaries
         plt.axvline(d * 24, color='gray', linestyle='--')
 
-    # Subplot 2: Revenues and Costs
+    # Subplot 2: Revenue and Cost Streams (positive/negative, colored by source: PV orange, BESS green, GRID blue/magenta)
     plt.subplot(3, 1, 2)  # Second subplot
-    plt.plot(time_steps, rev_sell_per_step, label='Grid Sell Rev (Eur)', color='cyan')  # Sell revenue
-    plt.plot(time_steps, cost_grid_per_step, label='Grid Buy Cost (Eur)', color='red')  # Buy cost
-    plt.plot(time_steps, cost_bess_per_step, label='BESS Cost (Eur)', color='magenta')  # BESS cost
-    plt.plot(time_steps, rev_pv_per_step, label='PV Avoided Cost (Eur)', color='green')  # PV avoided cost
+    # PV streams (orange variants)
+    plt.plot(time_steps, pv_to_consumer_rev, label='PV to Consumer (Rev)', color='orange')
+    plt.plot(time_steps, pv_to_grid_rev, label='PV to Grid (Rev)', color='darkorange')
+    plt.plot(time_steps, pv_to_bess_cost, label='PV to BESS (Cost)', color='gold')
+    # BESS streams (green variants)
+    plt.plot(time_steps, bess_to_consumer_rev, label='BESS to Consumer (Rev)', color='green')
+    plt.plot(time_steps, bess_to_grid_rev, label='BESS to Grid (Rev)', color='darkgreen')
+    # Grid streams (blue/magenta)
+    plt.plot(time_steps, grid_buy_cost, label='Grid Buy (Cost)', color='magenta')
+    # Penalty (red, if any)
+    plt.plot(time_steps, penalty_per_step, label='Penalty (Cost)', color='red', linestyle='--')
     plt.xlabel('Time (h)')  # X-label
     plt.ylabel('Eur/Step')  # Y-label
-    plt.title('Revenues and Costs')  # Title
+    plt.title('Revenue and Cost Streams')  # Title
     plt.legend(loc='best')  # Legend
     plt.grid(True)  # Grid
     plt.xticks(np.arange(0, 169, 24), day_labels)  # X-ticks with dynamic day labels
     for d in range(1, 7):  # Day boundaries
         plt.axvline(d * 24, color='gray', linestyle='--')
 
-    # Subplot 3: Revenue per step and cumulative
+    # Subplot 3: Total revenue per time step and cumulative revenue
     plt.subplot(3, 1, 3)  # Third subplot
     ax1 = plt.gca()  # Current axis
-    ax1.plot(time_steps, total_net_per_step, label='Rev per Step (Eur)', color='purple')  # Per-step revenue
+    ax1.plot(time_steps, total_net_per_step, label='Total Rev per Step (Eur)', color='purple')  # Per-step total revenue
     ax1.set_xlabel('Time (h)')  # X-label
     ax1.set_ylabel('Rev per Step (Eur)')  # Y-label
-    ax1.set_title('Timestep and Cum. Revenue')  # Title
+    ax1.set_title('Total Revenue per Step and Cumulative')  # Title
     ax1.legend(loc='upper left')  # Legend
     ax1.grid(True)  # Grid
     ax1.set_xticks(np.arange(0, 169, 24))  # X-ticks
@@ -460,9 +462,7 @@ if problem.status == cp.OPTIMAL:  # Proceeding only if optimal solution found
 
     ax2 = ax1.twinx()  # Twin axis for cumulative
     cumulative_revenue = np.cumsum(total_net_per_step)  # Cumulative net revenue
-    ax2.plot(time_steps, cumulative_revenue, label='Cum. Rev (Eur)', color='orange', linestyle='--')  # Plotting cumulative
-    cumulative_bess_revenue = np.cumsum(bess_rev_per_step)  # Cumulative BESS revenue
-    ax2.plot(time_steps, cumulative_bess_revenue, label='Cum. BESS Rev (Eur)', color='blue', linestyle='-.')  # Plotting BESS cumulative
+    ax2.plot(time_steps, cumulative_revenue, label='Cum. Total Rev (Eur)', color='orange', linestyle='--')  # Plotting cumulative
     ax2.set_ylabel('Cum. Rev (Eur)')  # Y-label
     ax2.legend(loc='upper right')  # Legend
 

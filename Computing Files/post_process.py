@@ -1,7 +1,7 @@
 import numpy as np
 
 def extract_results(variables, status):
-    if status != cp.OPTIMAL:
+    if status != 'optimal':
         return None
     results = {}
     results['P_PV_consumer_vals'] = variables['P_PV_consumer'].value

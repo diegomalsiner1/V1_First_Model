@@ -157,7 +157,7 @@ def load_data():
         if 6 <= local_t <= 18:  # Daytime hours for PV generation
             amplitude = plant_size * multipliers[day]  # Scaling amplitude by multiplier
             # Sinusoidal generation with noise
-            pv_power[i] = amplitude * np.sin(np.pi * (local_t - 6) / 12) + np.random.normal(0, 10)
+            pv_power[i] = amplitude * np.sin(np.pi * (local_t - 6) / 12) + np.random.normal(-10, 10)
         pv_power[i] = max(0, pv_power[i])  # Ensuring non-negative power
 
     # Generating consumer demand: Higher on weekdays (production), lower on weekends (standby)

@@ -1,157 +1,28 @@
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import os
-import random
-from datetime import datetime, timedelta, timezone
-import requests
-from xml.etree import ElementTree
-import warnings
+import load_data  # Import the modular data loader
 
 print("--- Running the Simulation Script (No BESS) ---")
 
-time_steps = np.arange(0, 168, 0.25)
-n_steps = len(time_steps)
-delta_t = 0.25
-time_indices = range(n_steps)
+# Load all input data from load_data.py (ignores BESS-related params)
+data = load_data.load()
 
-ENTSOE_TOKEN = 'cd4a21d9-d58c-4b68-b233-ae5e0d8707f5'
-BIDDING_ZONE = '10YCH-SWISSGRIDZ'
-TIMEZONE_OFFSET = 2
+# Extract relevant no-BESS data
+pv_power = data['pv_power']
+consumer_demand = data['consumer_demand']
+grid_buy_price = data['grid_buy_price']
+grid_sell_price = data['grid_sell_price']
+lcoe_pv = data['lcoe_pv']
+bidding_zone_desc = data['bidding_zone_desc']
+period_str = data['period_str']
+start_weekday = data['start_weekday']
+time_steps = data['time_steps']
+time_indices = data['time_indices']
+delta_t = data['delta_t']
+n_steps = data['n_steps']
 
-def get_dayahead_prices(api_key: str, area_code: str, start: datetime = None, end: datetime = None):
-    if not start:
-        start = datetime.now(timezone.utc)
-    elif start.tzinfo and start.tzinfo != timezone.utc:
-        start = start.astimezone(timezone.utc)
-    if not end:
-        end = start + timedelta(days=1)
-    elif end.tzinfo and end.tzinfo != timezone.utc:
-        end = end.astimezone(timezone.utc)
-    fmt = '%Y%m%d%H00'
-    url = f'https://web-api.tp.entsoe.eu/api?securityToken={api_key}&documentType=A44&in_Domain={area_code}' \
-          f'&out_Domain={area_code}&periodStart={start.strftime(fmt)}&periodEnd={end.strftime(fmt)}'
-    response = requests.get(url)
-    response.raise_for_status()
-    xml_str = response.text
-    result = {}
-    for child in ElementTree.fromstring(xml_str):
-        if child.tag.endswith("TimeSeries"):
-            for ts_child in child:
-                if ts_child.tag.endswith("Period"):
-                    for pe_child in ts_child:
-                        if pe_child.tag.endswith("timeInterval"):
-                            for ti_child in pe_child:
-                                if ti_child.tag.endswith("start"):
-                                    start_time = datetime.strptime(ti_child.text, '%Y-%m-%dT%H:%MZ').replace(tzinfo=timezone.utc)
-                        elif pe_child.tag.endswith("Point"):
-                            for po_child in pe_child:
-                                if po_child.tag.endswith("position"):
-                                    delta = int(po_child.text) - 1
-                                    time = start_time + timedelta(hours=delta)
-                                elif po_child.tag.endswith("price.amount"):
-                                    price = float(po_child.text)
-                                    result[time] = price
-    return result
-
-def load_data():
-    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv', comment='#')
-    lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]
-
-    constants_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/Constants_Plant.csv', comment='#')
-    pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])
-
-    utc_now = datetime.now(timezone.utc)
-    start_date = (utc_now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
-    end_date = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    try:
-        prices_dict = get_dayahead_prices(ENTSOE_TOKEN, BIDDING_ZONE, start_date, end_date)
-        sorted_times = sorted(prices_dict.keys())
-        print(f"API debug: Fetched {len(sorted_times)} prices for zone {BIDDING_ZONE}")
-        if sorted_times:
-            print(f"API debug: Date range: {sorted_times[0]} to {sorted_times[-1]}")
-        
-        filtered_times = [t for t in sorted_times if start_date <= t < end_date]
-        print(f"API debug: Filtered to {len(filtered_times)} prices within {start_date} to {end_date}")
-        
-        current_times = filtered_times
-        if len(current_times) != 168:
-            warnings.warn(f"Warning: Non-standard data ({len(current_times)} prices). Adjusting to 168.")
-            mean_price = np.mean([prices_dict[t] for t in current_times]) if current_times else 0.103 * 1000
-            
-            while len(current_times) < 168:
-                last_t = current_times[-1] if current_times else start_date
-                next_t = last_t + timedelta(hours=1)
-                prices_dict[next_t] = mean_price
-                current_times.append(next_t)
-            
-            if len(current_times) > 168:
-                current_times = current_times[:168]
-        
-        sorted_times = sorted(current_times)
-    except Exception as e:
-        print(f"API error: {e}. Falling back to synthetic data.")
-        grid_price_hourly = np.full(168, 0.103)
-        sorted_times = [start_date + timedelta(hours=i) for i in range(168)]
-    else:
-        grid_price_hourly = np.array([prices_dict[t] for t in sorted_times]) / 1000
-
-    local_start_time = sorted_times[0] + timedelta(hours=TIMEZONE_OFFSET)
-    start_weekday = local_start_time.weekday()
-
-    time_hourly = np.arange(0, 168, 1)
-    time_quarter = np.arange(0, 168, 0.25)
-    grid_price = np.interp(time_quarter, time_hourly, grid_price_hourly)
-    grid_buy_price = grid_price + 0.01
-    grid_sell_price = grid_price - 0.01
-
-    pv_power = np.zeros(n_steps)
-    multipliers = [1.0, 0.9, 0.5, 0.8, 1.0, 0.6, 1.0]
-    random.shuffle(multipliers)
-    for i, t in enumerate(time_steps):
-        local_t = t % 24
-        day = int(t // 24)
-        if 6 <= local_t <= 18:
-            amplitude = 2327 * multipliers[day]
-            pv_power[i] = amplitude * np.sin(np.pi * (local_t - 6) / 12) + np.random.normal(0, 10)
-        pv_power[i] = max(0, pv_power[i])
-
-    consumer_demand = np.zeros(n_steps)
-    for i, t in enumerate(time_steps):
-        local_t = t % 24
-        day = int(t // 24)
-        actual_weekday = (start_weekday + day) % 7
-        if actual_weekday < 5:
-            base = 200.0
-            if 6 <= local_t < 8:
-                add = 1000.0 * (local_t - 6) / 2
-                consumer_demand[i] = base + add
-            elif 8 <= local_t <= 16:
-                consumer_demand[i] = 1200.0
-            elif 16 < local_t <= 18:
-                add = 1000.0 * (18 - local_t) / 2
-                consumer_demand[i] = base + add
-            else:
-                consumer_demand[i] = base
-        else:
-            consumer_demand[i] = 70.0
-
-    bidding_zone_desc = f"Switzerland ({BIDDING_ZONE})"
-    period_start = local_start_time.strftime('%Y-%m-%d')
-    period_end = (local_start_time + timedelta(days=7)).strftime('%Y-%m-%d')
-    period_str = f"{period_start} to {period_end}"
-
-    days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    day_labels = [days[(start_weekday + d) % 7] for d in range(8)]
-
-    return (pv_power, consumer_demand, grid_buy_price, grid_sell_price,
-            lcoe_pv, pi_consumer,
-            bidding_zone_desc, period_str, day_labels)
-
-(pv_power, consumer_demand, grid_buy_price, grid_sell_price,
- lcoe_pv, pi_consumer,
- bidding_zone_desc, period_str, day_labels) = load_data()
-
+# Compute flows (no optimization: prioritize self-consumption, sell excess, buy deficit)
 P_PV_consumer_vals = np.minimum(pv_power, consumer_demand)
 P_PV_grid_vals = np.maximum(pv_power - consumer_demand, 0)
 P_grid_consumer_vals = np.maximum(consumer_demand - pv_power, 0)
@@ -160,6 +31,7 @@ slack_vals = np.zeros(n_steps)
 P_grid_sold = P_PV_grid_vals
 P_grid_bought = P_grid_consumer_vals
 
+# Compute revenues/costs
 rev_pv_per_step = P_PV_consumer_vals * (grid_buy_price - lcoe_pv) * delta_t
 rev_sell_per_step = P_PV_grid_vals * grid_sell_price * delta_t
 cost_grid_per_step = - P_grid_consumer_vals * grid_buy_price * delta_t
@@ -175,6 +47,9 @@ for t in time_indices:
         print(f"Time {time_steps[t]:.2f}h: Unmet demand = {slack_vals[t]:.2f} kW")
 
 plt.rcParams.update({'font.size': 8})
+
+days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+day_labels = [days[(start_weekday + d) % 7] for d in range(8)]
 
 plt.figure(figsize=(12, 8))
 

@@ -6,14 +6,6 @@ import requests
 from xml.etree import ElementTree
 import warnings
 
-import numpy as np
-import pandas as pd
-import random
-from datetime import datetime, timedelta, timezone
-import requests
-from xml.etree import ElementTree
-import warnings
-
 # Define time framework constants here (moved from main script)
 time_steps = np.arange(0, 168, 0.25)
 n_steps = len(time_steps)
@@ -79,12 +71,9 @@ def load():
     eta_discharge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Discharge']['Value'].iloc[0])
     soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])
     pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])
-
-    pv_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/PV_LCOE.csv', comment='#')
-    lcoe_pv = pv_lcoe_data['LCOE_PV'].iloc[0]
-
-    bess_lcoe_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/BESS_LCOE.csv', comment='#')
-    lcoe_bess = bess_lcoe_data['LCOE_BESS'].iloc[0]
+    lcoe_pv = float(constants_data[constants_data['Parameter'] == 'LCOE_PV']['Value'].iloc[0])
+    lcoe_bess = float(constants_data[constants_data['Parameter'] == 'LCOE_BESS']['Value'].iloc[0])
+    pv_peak = float(constants_data[constants_data['Parameter'] == 'PV_PEAK_POWER']['Value'].iloc[0])
 
     utc_now = datetime.now(timezone.utc)
     start_date = (utc_now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -137,7 +126,7 @@ def load():
         local_t = t % 24
         day = int(t // 24)
         if 6 <= local_t <= 18:
-            amplitude = 2327 * multipliers[day]
+            amplitude = pv_peak * multipliers[day]
             pv_power[i] = amplitude * np.sin(np.pi * (local_t - 6) / 12) + np.random.normal(0, 10)
         pv_power[i] = max(0, pv_power[i])
 

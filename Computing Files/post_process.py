@@ -19,6 +19,7 @@ def extract_results(variables, status):
 
     results['P_grid_sold'] = results['P_PV_grid_vals'] + results['P_BESS_grid_vals']
     results['P_grid_bought'] = results['P_grid_consumer_vals'] + results['P_grid_BESS_vals']
+    
     return results
 
 def compute_revenues(results, data):
@@ -47,6 +48,7 @@ def compute_revenues(results, data):
         grid_buy_cost.append(grid_cost)
         penalty_per_step.append(penalty)
         total_net_per_step.append(net_rev)
+        
     revenues = {
         'pv_to_consumer_rev': pv_to_consumer_rev,
         'pv_to_grid_rev': pv_to_grid_rev,
@@ -57,8 +59,16 @@ def compute_revenues(results, data):
         'penalty_per_step': penalty_per_step,
         'total_net_per_step': total_net_per_step,
         'total_revenue': sum(total_net_per_step)
-    }
+    }   
+        # Calculate self-sufficiency ratio
+    total_demand = np.sum(data['consumer_demand']) * data['delta_t']  # Total demand energy (kWh)
+    total_renewable_to_cons = np.sum(results['P_PV_consumer_vals'] + results['P_BESS_consumer_vals']) * data['delta_t']  # Renewable supplied to consumer (kWh)
+    self_sufficiency = (total_renewable_to_cons / total_demand) * 100 if total_demand > 0 else 0  # Ratio in %
+
+    revenues['self_sufficiency'] = self_sufficiency  # Add to revenues dict
+    
     return revenues
+
 
 def print_results(revenues, results, data):
     print(f"Total Revenue: Eur{revenues['total_revenue']:.2f}")

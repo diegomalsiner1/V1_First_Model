@@ -29,7 +29,7 @@ if status == 'optimal':
     # Generate plots
     days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(8)]  # Add day_labels to data
-    plots.plot_energy_flows(results, data)
+    plots.plot_energy_flows(results, data, revenues)
     plots.plot_financials(revenues, data)
 else:
     print("No optimal solution found.")

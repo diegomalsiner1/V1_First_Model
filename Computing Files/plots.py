@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-def plot_energy_flows(results, data):
+def plot_energy_flows(results, data, revenues):
     plt.figure(figsize=(12, 12))
 
     plt.subplot(3, 1, 1)
@@ -44,7 +44,7 @@ def plot_energy_flows(results, data):
     plt.plot(data['time_steps'], data['consumer_demand'], label='Demand', color='black', linestyle='--')
     plt.xlabel('Time (h)')
     plt.ylabel('Power (kW)')
-    plt.title('Consumer Flow Composition')
+    plt.title(f'Consumer Flow Composition (Self-Sufficiency: {revenues["self_sufficiency"]:.2f}%)')
     plt.legend(loc='best')
     plt.grid(True)
     plt.xticks(np.arange(0, 169, 24), data['day_labels'])

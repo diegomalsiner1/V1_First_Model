@@ -116,8 +116,8 @@ def load():
     time_hourly = np.arange(0, 168, 1)
     time_quarter = np.arange(0, 168, 0.25)
     grid_price = np.interp(time_quarter, time_hourly, grid_price_hourly)
-    grid_buy_price = grid_price + 0.01
-    grid_sell_price = grid_price - 0.01
+    grid_buy_price = grid_price + 0.005
+    grid_sell_price = grid_price - 0.005
 
     pv_power = np.zeros(n_steps)
     multipliers = [1.0, 0.9, 0.5, 0.8, 1.0, 0.6, 1.0]
@@ -158,6 +158,7 @@ def load():
     return {
         'pv_power': pv_power,
         'consumer_demand': consumer_demand,
+        'grid_price':grid_price,
         'grid_buy_price': grid_buy_price,
         'grid_sell_price': grid_sell_price,
         'lcoe_pv': lcoe_pv,

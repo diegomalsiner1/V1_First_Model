@@ -68,7 +68,7 @@ class MPC:
         objective = cp.Maximize(revenue)
 
         problem = cp.Problem(objective, constraints)
-        problem.solve(solver=cp.GUROBI, verbose=False, MIPGap=0.001)  # Relax for speed
+        problem.solve(solver=cp.GUROBI, verbose=False, MIPGap=0.01)  # Relax for speed
 
         if problem.status == 'optimal':
             return {

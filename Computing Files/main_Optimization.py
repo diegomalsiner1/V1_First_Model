@@ -10,7 +10,7 @@ import numpy as np  # For cumsum and other ops in loop
 data = load_data.load()
 
 # MPC Parameters
-horizon = 144 # 36 hours at 15-min intervals; adjust as needed
+horizon = 50 # 24 hours at 15-min intervals; adjust as needed
 mpc_controller = mpc.MPC(
     data['bess_capacity'], data['bess_power_limit'], data['eta_charge'],
     data['eta_discharge'], data['lcoe_bess'], data['soc_initial'], data['delta_t']

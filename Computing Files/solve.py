@@ -2,5 +2,5 @@ import cvxpy as cp
 
 def solve_problem(objective, constraints):
     problem = cp.Problem(objective, constraints)
-    problem.solve(solver=cp.GUROBI, verbose=True)
+    problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.01)
     return problem.status, problem

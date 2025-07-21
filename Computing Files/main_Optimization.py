@@ -1,6 +1,4 @@
 import load_data
-import model
-import solve
 import post_process
 import plots
 import mpc  # Import the MPC module
@@ -10,7 +8,7 @@ import numpy as np  # For cumsum and other ops in loop
 data = load_data.load()
 
 # MPC Parameters
-horizon = 50 # 24 hours at 15-min intervals; adjust as needed
+horizon = 30 # 6 hours at 15-min intervals; adjust as needed
 mpc_controller = mpc.MPC(
     data['bess_capacity'], data['bess_power_limit'], data['eta_charge'],
     data['eta_discharge'], data['lcoe_bess'], data['soc_initial'], data['delta_t']
@@ -37,11 +35,11 @@ for t in range(data['n_steps']):
     demand_forecast = data['consumer_demand'][t:t+horizon]
     buy_forecast = data['grid_buy_price'][t:t+horizon]
     sell_forecast = data['grid_sell_price'][t:t+horizon]
-    if remaining < horizon:
-        pv_forecast = np.pad(pv_forecast, (0, horizon - remaining), mode='edge')
-        demand_forecast = np.pad(demand_forecast, (0, horizon - remaining), mode='edge')
-        buy_forecast = np.pad(buy_forecast, (0, horizon - remaining), mode='mean')
-        sell_forecast = np.pad(sell_forecast, (0, horizon - remaining), mode='mean')
+    pad_len = horizon - len(pv_forecast) if len(pv_forecast) < horizon else 0
+    pv_forecast = np.pad(pv_forecast, (0, pad_len), mode='edge')
+    demand_forecast = np.pad(demand_forecast, (0, pad_len), mode='edge')
+    buy_forecast = np.pad(buy_forecast, (0, pad_len), mode='mean')
+    sell_forecast = np.pad(sell_forecast, (0, pad_len), mode='mean')
 
     # Run MPC to get control actions for current step
     control = mpc_controller.predict(soc_actual[t], pv_forecast, demand_forecast, buy_forecast, sell_forecast, data['lcoe_pv'], horizon)

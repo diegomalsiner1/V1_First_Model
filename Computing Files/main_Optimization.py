@@ -80,10 +80,9 @@ for t in range(data['n_steps']):
         soc_actual[t + 1] = control['SOC_next']
 
 # Compile results
-data['day_labels'] = [
-    ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][(data['start_weekday'] + d) % 7]
-    for d in range(7)  # Changed to range(7) for 7 days
-]
+
+    days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(7)] + ['']
 
 results = {
     'P_PV_consumer_vals': P_PV_consumer_vals,

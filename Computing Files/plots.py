@@ -33,7 +33,7 @@ def plot_energy_flows(results, data, revenues):
         ax1.axvline(d * 24, color='gray', linestyle='--')
 
     ax2 = ax1.twinx()
-    ax2.plot(np.arange(0, 168.25, 0.25), results['SOC_vals'], label='SOC (kWh)', color='green', linestyle='--')
+    ax2.plot(np.arange(0, 169, 0.25), results['SOC_vals'], label='SOC (kWh)', color='green', linestyle='--')
     ax2.set_ylabel('SOC (kWh)')
     ax2.legend(loc='upper right')
 

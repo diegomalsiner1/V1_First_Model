@@ -1,5 +1,13 @@
 import cvxpy as cp
 import numpy as np
+import logging
+import pandas as pd
+
+logging.basicConfig(level=logging.INFO)
+
+# Load constants at the top (global for the module)
+constants_data = pd.read_csv('C:/Users/dell/V1_First_Model/Input Data Files/Constants_Plant.csv', comment='#')
+bess_percent_limit = float(constants_data[constants_data['Parameter'] == 'BESS_limit']['Value'].iloc[0])
 
 class MPC:
     def __init__(self, bess_capacity, bess_power_limit, eta_charge, eta_discharge, lcoe_bess, soc_initial, delta_t):
@@ -43,7 +51,7 @@ class MPC:
         constraints += [SOC[k+1] == SOC[k] + self.eta_charge * (P_PV_BESS[k] + P_grid_BESS[k]) * self.delta_t -
                         (P_BESS_cons[k] + P_BESS_grid[k]) / self.eta_discharge * self.delta_t for k in range(horizon)]
         constraints += [SOC[k] <= self.bess_capacity for k in range(horizon + 1)]
-        constraints += [SOC[k] >= 0.05 * self.bess_capacity for k in range(horizon + 1)]
+        constraints += [SOC[k] >= bess_percent_limit * self.bess_capacity for k in range(horizon + 1)]
         constraints += [SOC[horizon] >= soc_current]  # Terminal constraint
 
         # Mutual exclusivity (Big-M)
@@ -68,7 +76,7 @@ class MPC:
         objective = cp.Maximize(revenue)
 
         problem = cp.Problem(objective, constraints)
-        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.05)  # Relax for speed
+        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.01)  # Relax for speed
 
         if problem.status == 'optimal':
             return {
@@ -83,4 +91,5 @@ class MPC:
                 'SOC_next': SOC.value[1]  # Predicted next SOC
             }
         else:
+            logging.info("MPC infeasible at current step.")
             return None  # If infeasible, return None or fallback

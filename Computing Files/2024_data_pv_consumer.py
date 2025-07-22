@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+WEEK NUMBER FETCH
+
 def compute_pv_power(week_number=1):
     path = r'C:\Users\dell\V1_First_Model\Input Data Files\pv_FdM_2024.csv'
     df = pd.read_csv(path)

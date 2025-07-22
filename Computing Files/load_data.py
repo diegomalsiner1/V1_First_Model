@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timedelta, timezone
 import warnings
 import API_prices  # Import for price fetching
-import solar_irradiance #Import for pv_power generation
+import 2024_data_pv_consumer as pv_data  # Import for PV and consumer data from CSV
 
 # Define time framework constants here (moved from main script)
 time_steps = np.arange(0, 168, 0.25)
@@ -34,35 +34,20 @@ def load():
     # Fetch prices from API_prices.py
     grid_buy_price, grid_sell_price = API_prices.fetch_prices(entsoe_token, bidding_zone)  # Fixed: pass only 2 args
 
-    local_start_time = start_date + timedelta(hours=timezone_offset)  # Simplified; adjust if needed based on prices
+    # Load PV production and consumer demand from CSV for a specific week in 2024
+    week_number = 1  # Parameter for choosing a week in 2024 (can be changed as needed)
+    result = pv_data.compute_pv_power(week_number=week_number)
+    pv_power = result['pv_production'] * (1 / delta_t)  # Convert kWh per 15min to average power in kW
+    consumer_demand = result['consumer_demand'] * (1 / delta_t)  # Convert kWh per 15min to average power in kW
+
+    # Set period based on selected week in 2024
+    local_start_time = datetime(2024, 1, 1) + timedelta(days=(week_number - 1) * 7)
     start_weekday = local_start_time.weekday()
-
-    pv_power=solar_irradiance.compute_pv_power()
-
-    consumer_demand = np.zeros(n_steps)
-    for i, t in enumerate(time_steps):
-        local_t = t % 24
-        day = int(t // 24)
-        actual_weekday = (start_weekday + day) % 7
-        if actual_weekday < 5:
-            base = 200.0
-            if 6 <= local_t < 8:
-                add = 1000.0 * (local_t - 6) / 2
-                consumer_demand[i] = base + add
-            elif 8 <= local_t <= 16:
-                consumer_demand[i] = 1200.0
-            elif 16 < local_t <= 18:
-                add = 1000.0 * (18 - local_t) / 2
-                consumer_demand[i] = base + add
-            else:
-                consumer_demand[i] = base
-        else:
-            consumer_demand[i] = 70.0
-
-    bidding_zone_desc = f"({bidding_zone})"
     period_start = local_start_time.strftime('%Y-%m-%d')
     period_end = (local_start_time + timedelta(days=7)).strftime('%Y-%m-%d')
     period_str = f"{period_start} to {period_end}"
+
+    bidding_zone_desc = f"({bidding_zone})"
 
     return {
         'pv_power': pv_power,

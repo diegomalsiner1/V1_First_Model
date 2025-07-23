@@ -1,3 +1,7 @@
+
+
+
+
 #SOLCAST_API_KEY,Ea6JstevLROLFGHjj4UYfIARVXXN-6ky  # Unused; for Solcast PV forecasting, but code uses historical data
 #LATITUDE,45.992749  # Unused; for Solcast or similar, not in current code
 #LONGITUDE,13.361149  # Unused; for Solcast or similar, not in current code

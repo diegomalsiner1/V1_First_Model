@@ -61,12 +61,11 @@ results = {
 revenues = post_process.compute_revenues(results, data)
 post_process.print_results(revenues, results, data)
 
-# Add suffix to distinguish plots
-data['plot_suffix'] = '_Reference'
-
 # Generate plots
 days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(8)]
 
+# Add suffix to distinguish plots
+data['plot_suffix'] = '_Reference'
 plots.plot_energy_flows(results, data, revenues)
 plots.plot_financials(revenues, data)

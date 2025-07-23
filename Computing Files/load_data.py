@@ -19,13 +19,25 @@ def sanity_check(data):
     return True
 
 def load_constants():
+    # Use relative path for portability; assume CSV in Input Data Files/ or adjust as needed
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
+    csv_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')  # Adjust if structure changes
     constants_data = pd.read_csv(csv_path, comment='#')
     return constants_data
 
-def load(apply_pv_scaling=True):
+def load():
     constants_data = load_constants()
+    
+    # Parse PERIOD_START and PERIOD_END to datetimes (for consistent use across data)
+    period_start_str = constants_data[constants_data['Parameter'] == 'PERIOD_START']['Value'].iloc[0]
+    period_end_str = constants_data[constants_data['Parameter'] == 'PERIOD_END']['Value'].iloc[0]
+    start_dt = pd.to_datetime(period_start_str, format='%Y%m%d%H%M')
+    end_dt = pd.to_datetime(period_end_str, format='%Y%m%d%H%M')
+     
+    
+    # Validate: Exactly 7 days
+    if (end_dt - start_dt) != timedelta(days=7):
+        raise ValueError("PERIOD_START to PERIOD_END must span exactly 7 days.")
 
     timezone_offset = int(constants_data[constants_data['Parameter'] == 'TIMEZONE_OFFSET']['Value'].iloc[0])
     bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])
@@ -38,31 +50,23 @@ def load(apply_pv_scaling=True):
     lcoe_bess = float(constants_data[constants_data['Parameter'] == 'LCOE_BESS']['Value'].iloc[0])
     pv_old = float(constants_data[constants_data['Parameter'] == 'PV_OLD']['Value'].iloc[0])
     pv_new = float(constants_data[constants_data['Parameter'] == 'PV_NEW']['Value'].iloc[0])
-    week_number = int(constants_data[constants_data['Parameter'] == 'WEEK_NUMBER']['Value'].iloc[0])
     bidding_zone = constants_data[constants_data['Parameter'] == 'BIDDING_ZONE']['Value'].iloc[0]
 
-    # Load price data (hourly)
+    # Fetch hourly grid prices (consistent with dates)
     grid_buy_price_raw, grid_sell_price_raw = API_prices.fetch_prices()
-    grid_buy_price_raw = grid_buy_price_raw[:168]
-    grid_sell_price_raw = grid_sell_price_raw[:168]
+    if len(grid_buy_price_raw) != 168:
+        raise ValueError(f"Expected 168 hourly prices, got {len(grid_buy_price_raw)}.")
     grid_buy_price = np.repeat(grid_buy_price_raw.values, 4)
     grid_sell_price = np.repeat(grid_sell_price_raw.values, 4)
 
-    # Load PV and demand data
-    result = pv_data.compute_pv_power(week_number)
-    pv_production = result['pv_production']
-
-    if apply_pv_scaling:
-        scaling_factor = (pv_old + pv_new) / pv_old
-        print(f"[INFO] PV production scaled by factor {scaling_factor:.3f}")
-        pv_production *= scaling_factor
-
-    pv_power = pv_production * (1 / delta_t)  # convert kWh/15min → kW
+    # Load PV and demand using the same start/end dates
+    result = pv_data.compute_pv_power(start_dt, end_dt)
+    pv_power = ((pv_new + pv_old)/pv_old) * result['pv_production'] * (1 / delta_t)  # convert kWh per 15 min → kW
     consumer_demand = result['consumer_demand'] * (1 / delta_t)
 
-    local_start_time = datetime(2024, 1, 1) + timedelta(days=(week_number - 1) * 7)
-    start_weekday = local_start_time.weekday()
-    period_str = f"{local_start_time.strftime('%Y-%m-%d')} to {(local_start_time + timedelta(days=7)).strftime('%Y-%m-%d')}"
+    # Use actual start_dt for weekday and period string
+    start_weekday = start_dt.weekday()
+    period_str = f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}"
 
     data = {
         'pv_power': pv_power,

@@ -39,7 +39,7 @@ class MPC:
         constraints += [P_PV_cons[k] + P_BESS_cons[k] + P_grid_cons[k] + slack[k] == demand_forecast[k] for k in range(horizon)]
 
         # PV allocation
-        constraints += [P_PV_cons[k] + P_PV_BESS[k] + P_PV_grid[k] <= pv_forecast[k] for k in range(horizon)]
+        constraints += [P_PV_cons[k] + P_PV_BESS[k] + P_PV_grid[k] + slack[k] == pv_forecast[k] for k in range(horizon)]
 
         # BESS limits
         for k in range(horizon):

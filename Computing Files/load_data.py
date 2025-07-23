@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import os
 import API_prices
+import Prices_ITA
 import pv_consumer_data_2024 as pv_data
 from datetime import datetime, timedelta
 
@@ -52,12 +53,16 @@ def load():
     pv_new = float(constants_data[constants_data['Parameter'] == 'PV_NEW']['Value'].iloc[0])
     bidding_zone = constants_data[constants_data['Parameter'] == 'BIDDING_ZONE']['Value'].iloc[0]
 
-    # Fetch hourly grid prices (consistent with dates)
+    # Fetch hourly grid prices (NOW FROM PRICE MATRIX ITA)
     grid_buy_price_raw, grid_sell_price_raw = API_prices.fetch_prices()
     if len(grid_buy_price_raw) != 168:
-        raise ValueError(f"Expected 168 hourly prices, got {len(grid_buy_price_raw)}.")
+       raise ValueError(f"Expected 168 hourly prices, got {len(grid_buy_price_raw)}.")
     grid_buy_price = np.repeat(grid_buy_price_raw.values, 4)
     grid_sell_price = np.repeat(grid_sell_price_raw.values, 4)
+
+    #FOR ITA PRICE MATRIX READ INSTEAD OF API
+    #grid_buy_price = Prices_ITA.fetch_prices_from_csv(start_dt, end_dt)
+    #grid_sell_price = grid_buy_price - 0.01  # Assumed margin, adjust as needed
 
     # Load PV and demand using the same start/end dates
     result = pv_data.compute_pv_power(start_dt, end_dt)

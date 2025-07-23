@@ -48,7 +48,7 @@ def fetch_prices():
     buy_prices_raw = get_price_document("A44")  # Day-ahead prices
 
     # Adapt sell prices by subtracting 0.01 from buy prices (as per instructions)
-    sell_prices_raw = [max(0, p - 0.01) for p in buy_prices_raw]  # Ensure non-negative, optional
+    sell_prices_raw = [max(0, p - 0.005) for p in buy_prices_raw]  # Ensure non-negative, optional
 
     # Clip to exactly 168 hours (7 days)
     buy_prices = buy_prices_raw[:168]

@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import os  # Add this import for relative paths
+import os
 import API_prices
 import pv_consumer_data_2024 as pv_data
 from datetime import datetime, timedelta
@@ -19,15 +19,14 @@ def sanity_check(data):
     return True
 
 def load_constants():
-    # Use relative path for portability; assume CSV in Input Data Files/ or adjust as needed
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')  # Adjust if structure changes
+    csv_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
     constants_data = pd.read_csv(csv_path, comment='#')
     return constants_data
 
-def load():
+def load(apply_pv_scaling=True):
     constants_data = load_constants()
-    
+
     timezone_offset = int(constants_data[constants_data['Parameter'] == 'TIMEZONE_OFFSET']['Value'].iloc[0])
     bess_capacity = float(constants_data[constants_data['Parameter'] == 'BESS_Capacity']['Value'].iloc[0])
     bess_power_limit = float(constants_data[constants_data['Parameter'] == 'BESS_Power_Limit']['Value'].iloc[0])
@@ -42,16 +41,23 @@ def load():
     week_number = int(constants_data[constants_data['Parameter'] == 'WEEK_NUMBER']['Value'].iloc[0])
     bidding_zone = constants_data[constants_data['Parameter'] == 'BIDDING_ZONE']['Value'].iloc[0]
 
-    # Fetch hourly grid prices (now without arguments)
+    # Load price data (hourly)
     grid_buy_price_raw, grid_sell_price_raw = API_prices.fetch_prices()
     grid_buy_price_raw = grid_buy_price_raw[:168]
     grid_sell_price_raw = grid_sell_price_raw[:168]
     grid_buy_price = np.repeat(grid_buy_price_raw.values, 4)
     grid_sell_price = np.repeat(grid_sell_price_raw.values, 4)
 
-    # Load PV and demand for specified week
+    # Load PV and demand data
     result = pv_data.compute_pv_power(week_number)
-    pv_power = ((pv_new + pv_old)/pv_old) * result['pv_production'] * (1 / delta_t)  # convert kWh per 15 min → kW
+    pv_production = result['pv_production']
+
+    if apply_pv_scaling:
+        scaling_factor = (pv_old + pv_new) / pv_old
+        print(f"[INFO] PV production scaled by factor {scaling_factor:.3f}")
+        pv_production *= scaling_factor
+
+    pv_power = pv_production * (1 / delta_t)  # convert kWh/15min → kW
     consumer_demand = result['consumer_demand'] * (1 / delta_t)
 
     local_start_time = datetime(2024, 1, 1) + timedelta(days=(week_number - 1) * 7)

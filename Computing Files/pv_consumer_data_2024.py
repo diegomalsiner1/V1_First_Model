@@ -14,8 +14,11 @@ def compute_pv_power(week_number):
     for col in cols:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    df_15min = df[cols].resample('15min').interpolate(method='linear')
-    df_15min['consumer_demand'] = 0.25*(df_15min['InverterYield'] + df_15min['PurchasedFromNet'] - df_15min['GridFeedIn'])
+    # Resample to 15min intervals: distribute hourly energy equally over 4 intervals
+    df_15min = df[cols].resample('15min').ffill() / 4
+
+    # Calculate consumer demand in kWh per 15min
+    df_15min['consumer_demand'] = df_15min['InverterYield'] + df_15min['PurchasedFromNet'] - df_15min['GridFeedIn']
 
     start_time = df_15min.index[0] + pd.Timedelta(days=(week_number - 1) * 7)
     end_time = start_time + pd.Timedelta(hours=167, minutes=45)

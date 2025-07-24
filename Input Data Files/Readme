@@ -1,5 +1,14 @@
+This is common in academic and planning studies, but in practice:
 
+PV generation is not controllable (unless you curtail it, which is rare for small systems).
+Consumer demand is not controllable (unless you have demand response).
+Grid import/export is a result of the above and the battery's operation.
+So, if you want the model to reflect a real system where only the battery is controllable, you would:
 
+Set PV to consumer as min(PV, demand).
+Set PV to grid as max(PV - demand, 0) if battery is full or not charging.
+Set grid to consumer as max(demand - PV - BESS discharge, 0).
+Only optimize the BESS charge/discharge.
 
 
 #SOLCAST_API_KEY,Ea6JstevLROLFGHjj4UYfIARVXXN-6ky  # Unused; for Solcast PV forecasting, but code uses historical data

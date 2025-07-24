@@ -3,6 +3,7 @@ import post_process
 import plots
 import mpc
 import numpy as np
+import os
 
 # Load all input data
 data = load_data.load()
@@ -79,11 +80,18 @@ for t in range(data['n_steps']):
         slack_vals[t] = control['slack']
         soc_actual[t + 1] = control['SOC_next']
 
+# Prepare day labels for plotting
+
+days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(8)]
+
+# Add suffix to distinguish plots
+output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
+os.makedirs(output_dir, exist_ok=True)
+data['plot_suffix'] = ''  # No suffix for main optimization
+
 # Compile results
-
-    days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(7)] + ['']
-
+data['plot_suffix'] = ''
 results = {
     'P_PV_consumer_vals': P_PV_consumer_vals,
     'P_PV_BESS_vals': P_PV_BESS_vals,
@@ -99,9 +107,7 @@ results = {
     'P_grid_sold': P_PV_grid_vals + P_BESS_grid_vals,
     'P_grid_bought': P_grid_consumer_vals + P_grid_BESS_vals
 }
-
 revenues = post_process.compute_revenues(results, data)
 post_process.print_results(revenues, results, data)
-
-plots.plot_energy_flows(results, data, revenues)
-plots.plot_financials(revenues, data)
+plots.plot_energy_flows(results, data, revenues, save_dir=output_dir)
+plots.plot_financials(revenues, data, save_dir=output_dir)

@@ -1,6 +1,16 @@
 import numpy as np
 
 def compute_revenues(results, data):
+    """
+    Compute detailed revenue streams and self-sufficiency for the simulation results.
+
+    Args:
+        results (dict): Power flows and slack values.
+        data (dict): Simulation data and parameters.
+
+    Returns:
+        dict: Revenue streams and self-sufficiency ratio.
+    """
     # Vectorized revenue calculations using NumPy for efficiency and consistency
     pv_to_consumer_rev = results['P_PV_consumer_vals'] * (data['grid_buy_price'] - data['lcoe_pv']) * data['delta_t']
     pv_to_grid_rev = results['P_PV_grid_vals'] * (data['grid_sell_price'] - data['lcoe_pv']) * data['delta_t']
@@ -33,6 +43,14 @@ def compute_revenues(results, data):
     return revenues
 
 def print_results(revenues, results, data):
+    """
+    Print summary results for the simulation.
+
+    Args:
+        revenues (dict): Revenue streams and self-sufficiency.
+        results (dict): Power flows and slack values.
+        data (dict): Simulation data and parameters.
+    """
     print(f"Total Revenue: Eur{revenues['total_revenue']:.2f}")
     print("Time steps with unmet demand (kW):")
     for t in data['time_indices']:

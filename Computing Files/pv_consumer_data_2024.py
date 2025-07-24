@@ -2,6 +2,16 @@ import pandas as pd
 import os
 
 def compute_pv_power(start_time, end_time):
+    """
+    Load and process PV and consumer demand data for the specified period.
+
+    Args:
+        start_time (pd.Timestamp): Start datetime (inclusive).
+        end_time (pd.Timestamp): End datetime (exclusive).
+
+    Returns:
+        dict: {'pv_production': np.ndarray, 'consumer_demand': np.ndarray}
+    """
     # Cross-platform, dynamic path to data file
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_PATH = os.path.join(BASE_DIR, 'Input Data Files', 'pv_FdM_2024.csv')
@@ -25,7 +35,7 @@ def compute_pv_power(start_time, end_time):
         df_15min['GridFeedIn']
     )
 
-    # Ensure slicing returns exactly 672 steps
+    # Ensure slicing returns exactly 672 steps (7 days x 24h x 4)
     df_week = df_15min.loc[start_time:end_time - pd.Timedelta(minutes=15)]
 
     if len(df_week) != 672:

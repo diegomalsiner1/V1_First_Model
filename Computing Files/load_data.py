@@ -73,10 +73,18 @@ def load(reference_case=False, use_api=True):
     pv_old = float(constants_data[constants_data['Parameter'] == 'PV_OLD']['Value'].iloc[0])
     pv_new = float(constants_data[constants_data['Parameter'] == 'PV_NEW']['Value'].iloc[0])
     bidding_zone = constants_data[constants_data['Parameter'] == 'BIDDING_ZONE']['Value'].iloc[0]
+    
     # Fetch prices
-    grid_buy_price_raw, grid_sell_price_raw = fetch_prices(start_dt, end_dt, use_api=use_api)
+    # To switch price source, comment/uncomment the following lines:
+    # --- Use API prices ---
+    # grid_buy_price_raw, grid_sell_price_raw = fetch_prices(start_dt, end_dt, use_api=True)
+    # --- Use ITA price matrix ---
+    grid_buy_price_raw, grid_sell_price_raw = Prices_ITA.fetch_prices_from_csv()
+    # --- End switch ---
     grid_buy_price = np.repeat(grid_buy_price_raw.values, int(1/delta_t))
     grid_sell_price = np.repeat(grid_sell_price_raw.values, int(1/delta_t))
+    
+    
     # Load PV and demand
     result = pv_data.compute_pv_power(start_dt, end_dt)
     if reference_case:

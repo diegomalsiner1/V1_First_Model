@@ -4,7 +4,7 @@ PERIOD_END,202405130000
 PV_OLD,1310
 PV_NEW,1218
 BESS_Capacity,4472
-BESS_limit,0.05 #% of capacity SOC_min
+BESS_limit,0.05
 SOC_Initial,2236
 BESS_Power_Limit,1000
 BESS_Efficiency_Charge,0.984

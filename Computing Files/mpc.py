@@ -83,7 +83,7 @@ class MPC:
         )
         objective = cp.Maximize(revenue)
         problem = cp.Problem(objective, constraints)
-        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.01)
+        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.005)
         if problem.status == 'optimal':
             return {
                 'P_PV_cons': P_PV_cons.value[0],

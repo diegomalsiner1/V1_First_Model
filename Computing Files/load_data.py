@@ -65,6 +65,7 @@ def load():
     #grid_sell_price = grid_buy_price - 0.01  # Assumed margin, adjust as needed
 
     # Load PV and demand using the same start/end dates
+    #Delete "((pv_new + pv_old)/pv_old) * " if simulate Reference Case
     result = pv_data.compute_pv_power(start_dt, end_dt)
     pv_power = ((pv_new + pv_old)/pv_old) * result['pv_production'] * (1 / delta_t)  # convert kWh per 15 min → kW
     consumer_demand = result['consumer_demand'] * (1 / delta_t)

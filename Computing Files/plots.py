@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-def plot_energy_flows(results, data, revenues):
+def plot_energy_flows(results, data, revenues, save_dir=None):
     plt.figure(figsize=(12, 12))
 
     plt.subplot(3, 1, 1)
@@ -54,13 +54,15 @@ def plot_energy_flows(results, data, revenues):
     plt.subplots_adjust(hspace=0.4)
     plt.tight_layout(pad=1.5)
     
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, 'Energy_Flows.png'))
+    if save_dir is None:
+        save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    suffix = data.get('plot_suffix', '')
+    plt.savefig(os.path.join(save_dir, f'Energy_Flows{suffix}.png'))
     plt.show()
 
-def plot_financials(revenues, data):
+def plot_financials(revenues, data, save_dir=None):
     plt.figure(figsize=(12, 12))
 
     plt.subplot(3, 1, 1)
@@ -116,8 +118,10 @@ def plot_financials(revenues, data):
     plt.subplots_adjust(hspace=0.4)
     plt.tight_layout(pad=1.5)
     
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    plt.savefig(os.path.join(output_dir, 'Financials.png'))
+    if save_dir is None:
+        save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    suffix = data.get('plot_suffix', '')
+    plt.savefig(os.path.join(save_dir, f'Financials{suffix}.png'))
     plt.show()

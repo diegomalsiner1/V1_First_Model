@@ -2,6 +2,7 @@ import load_data
 import post_process
 import plots
 import numpy as np
+import os
 
 # Load input data
 data = load_data.load()
@@ -66,6 +67,8 @@ days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(8)]
 
 # Add suffix to distinguish plots
+output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
+os.makedirs(output_dir, exist_ok=True)
 data['plot_suffix'] = '_Reference'
-plots.plot_energy_flows(results, data, revenues)
-plots.plot_financials(revenues, data)
+plots.plot_energy_flows(results, data, revenues, save_dir=output_dir)
+plots.plot_financials(revenues, data, save_dir=output_dir)

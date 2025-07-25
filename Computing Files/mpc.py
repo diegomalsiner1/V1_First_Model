@@ -26,75 +26,86 @@ class MPC:
         self.bess_percent_limit = load_bess_percent_limit(constants_path)
 
     def predict(self, soc_current, pv_forecast, demand_forecast, buy_forecast, sell_forecast, lcoe_pv, horizon):
-        # Ensure initial SOC is always set to soc_initial for the first time step
-        if hasattr(self, '_first_call'):
-            pass
-        else:
-            self._first_call = True
-        if self._first_call:
-            soc_current = self.soc_initial
-            self._first_call = False
-        # Define variables for horizon
-        P_PV_cons = cp.Variable(horizon, nonneg=True)
-        P_PV_BESS = cp.Variable(horizon, nonneg=True)
-        P_PV_grid = cp.Variable(horizon, nonneg=True)
-        P_BESS_cons = cp.Variable(horizon, nonneg=True)
-        P_BESS_grid = cp.Variable(horizon, nonneg=True)
-        P_grid_cons = cp.Variable(horizon, nonneg=True)
-        P_grid_BESS = cp.Variable(horizon, nonneg=True)
-        SOC = cp.Variable(horizon + 1, nonneg=True)
+        # Only BESS power is controllable: positive = discharge, negative = charge
+        P_BESS = cp.Variable(horizon)
+        SOC = cp.Variable(horizon + 1)
         slack = cp.Variable(horizon, nonneg=True)
-        delta_bess = cp.Variable(horizon, boolean=True)
-        delta_grid = cp.Variable(horizon, boolean=True)
-
+        # Auxiliary variables for all flows (all non-negative)
+        pv_to_consumer = cp.Variable(horizon, nonneg=True)
+        bess_to_consumer = cp.Variable(horizon, nonneg=True)
+        pv_to_bess = cp.Variable(horizon, nonneg=True)
+        pv_to_grid = cp.Variable(horizon, nonneg=True)
+        grid_to_consumer = cp.Variable(horizon, nonneg=True)
+        grid_to_bess = cp.Variable(horizon, nonneg=True)
+        pv_surplus = cp.Variable(horizon, nonneg=True)
+        pv_after_bess = cp.Variable(horizon, nonneg=True)
+        charge = cp.Variable(horizon, nonneg=True)
+        discharge = cp.Variable(horizon, nonneg=True)
         constraints = []
-        # Consumer balance
-        constraints += [P_PV_cons[k] + P_BESS_cons[k] + P_grid_cons[k] + slack[k] == demand_forecast[k] for k in range(horizon)]
-        # PV allocation
-        constraints += [P_PV_cons[k] + P_PV_BESS[k] + P_PV_grid[k] + slack[k] == pv_forecast[k] for k in range(horizon)]
-        # BESS limits
-        for k in range(horizon):
-            constraints += [P_PV_BESS[k] + P_grid_BESS[k] <= self.bess_power_limit]
-            constraints += [P_BESS_cons[k] + P_BESS_grid[k] <= self.bess_power_limit]
-        # SOC dynamics
         constraints += [SOC[0] == soc_current]
-        constraints += [SOC[k+1] == SOC[k] + self.eta_charge * (P_PV_BESS[k] + P_grid_BESS[k]) * self.delta_t -
-                        (P_BESS_cons[k] + P_BESS_grid[k]) / self.eta_discharge * self.delta_t for k in range(horizon)]
-        constraints += [SOC[k] <= self.bess_capacity for k in range(horizon + 1)]
-        constraints += [SOC[k] >= self.bess_percent_limit * self.bess_capacity for k in range(horizon + 1)]
-        constraints += [SOC[horizon] >= soc_current]  # Terminal constraint
-        # Mutual exclusivity (Big-M)
-        M_bess = self.bess_power_limit
-        M_grid = max(np.max(pv_forecast), np.max(demand_forecast)) + self.bess_power_limit
         for k in range(horizon):
-            constraints += [P_PV_BESS[k] + P_grid_BESS[k] <= M_bess * delta_bess[k]]
-            constraints += [P_BESS_cons[k] + P_BESS_grid[k] <= M_bess * (1 - delta_bess[k])]
-            constraints += [P_grid_cons[k] + P_grid_BESS[k] <= M_grid * delta_grid[k]]
-            constraints += [P_PV_grid[k] + P_BESS_grid[k] <= M_grid * (1 - delta_grid[k])]
-        # Objective (revenue over horizon)
-        revenue = (
-            cp.sum(cp.multiply(P_PV_cons, buy_forecast - lcoe_pv) * self.delta_t) +
-            cp.sum(cp.multiply(P_PV_grid, sell_forecast - lcoe_pv) * self.delta_t) +
-            cp.sum(cp.multiply(P_PV_BESS, - lcoe_pv) * self.delta_t) +
-            cp.sum(cp.multiply(P_BESS_cons, buy_forecast - self.lcoe_bess) * self.delta_t) +
-            cp.sum(cp.multiply(P_BESS_grid, sell_forecast - self.lcoe_bess) * self.delta_t) -
-            cp.sum(cp.multiply(P_grid_cons + P_grid_BESS, buy_forecast) * self.delta_t) -
-            1e5 * cp.sum(slack)
+            pv = pv_forecast[k]
+            demand = demand_forecast[k]
+            # BESS power limits
+            constraints += [P_BESS[k] <= self.bess_power_limit]
+            constraints += [P_BESS[k] >= -self.bess_power_limit]
+            # Charge/discharge split
+            constraints += [charge[k] >= -P_BESS[k]]
+            constraints += [charge[k] >= 0]
+            constraints += [discharge[k] >= P_BESS[k]]
+            constraints += [discharge[k] >= 0]
+            # SOC update
+            constraints += [SOC[k+1] == SOC[k] + self.eta_charge * charge[k] * self.delta_t - (discharge[k] / self.eta_discharge) * self.delta_t]
+            constraints += [SOC[k+1] <= self.bess_capacity]
+            constraints += [SOC[k+1] >= self.bess_percent_limit * self.bess_capacity]
+            # PV to consumer: up to demand and PV available
+            constraints += [pv_to_consumer[k] <= pv]
+            constraints += [pv_to_consumer[k] <= demand]
+            # PV surplus after consumer
+            constraints += [pv_surplus[k] >= pv - pv_to_consumer[k]]
+            constraints += [pv_surplus[k] >= 0]
+            # PV to BESS: up to charge and PV surplus
+            constraints += [pv_to_bess[k] <= charge[k]]
+            constraints += [pv_to_bess[k] <= pv_surplus[k]]
+            # PV after BESS (for grid export)
+            constraints += [pv_after_bess[k] >= pv_surplus[k] - pv_to_bess[k]]
+            constraints += [pv_after_bess[k] >= 0]
+            # PV to grid: remaining PV after consumer and BESS
+            constraints += [pv_to_grid[k] == pv_after_bess[k]]
+            # BESS to consumer: up to discharge and remaining demand
+            constraints += [bess_to_consumer[k] <= discharge[k]]
+            constraints += [bess_to_consumer[k] <= demand - pv_to_consumer[k]]
+            # Grid to consumer: remaining demand
+            constraints += [grid_to_consumer[k] == demand - pv_to_consumer[k] - bess_to_consumer[k] + slack[k]]
+            # Grid to BESS: up to charge not covered by PV
+            constraints += [grid_to_bess[k] == charge[k] - pv_to_bess[k]]
+            constraints += [grid_to_bess[k] >= 0]
+        # Objective: revenue + battery usage reward
+        alpha = 0.01  # Usage reward coefficient
+        revenue = cp.sum(
+            pv_to_consumer * (buy_forecast[:horizon] - lcoe_pv) * self.delta_t +
+            pv_to_grid * (sell_forecast[:horizon] - lcoe_pv) * self.delta_t +
+            pv_to_bess * (-lcoe_pv) * self.delta_t +
+            bess_to_consumer * (buy_forecast[:horizon] - self.lcoe_bess) * self.delta_t +
+            grid_to_consumer * (-buy_forecast[:horizon]) * self.delta_t +
+            grid_to_bess * (-self.lcoe_bess) * self.delta_t -
+            1e5 * slack * self.delta_t
         )
-        objective = cp.Maximize(revenue)
+        bess_usage = cp.sum(charge + discharge) * self.delta_t
+        objective = cp.Maximize(revenue + alpha * bess_usage)
         problem = cp.Problem(objective, constraints)
         problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.005)
         if problem.status == 'optimal':
             return {
-                'P_PV_cons': P_PV_cons.value[0],
-                'P_PV_BESS': P_PV_BESS.value[0],
-                'P_PV_grid': P_PV_grid.value[0],
-                'P_BESS_cons': P_BESS_cons.value[0],
-                'P_BESS_grid': P_BESS_grid.value[0],
-                'P_grid_cons': P_grid_cons.value[0],
-                'P_grid_BESS': P_grid_BESS.value[0],
-                'slack': slack.value[0],
-                'SOC_next': SOC.value[1]
+                'P_BESS': P_BESS.value[0],
+                'SOC_next': SOC.value[1],
+                'pv_to_consumer': pv_to_consumer.value[0],
+                'bess_to_consumer': bess_to_consumer.value[0],
+                'pv_to_bess': pv_to_bess.value[0],
+                'pv_to_grid': pv_to_grid.value[0],
+                'grid_to_consumer': grid_to_consumer.value[0],
+                'grid_to_bess': grid_to_bess.value[0],
+                'slack': slack.value[0]
             }
         else:
             logging.info("MPC infeasible at current step.")

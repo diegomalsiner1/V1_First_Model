@@ -75,6 +75,8 @@ class MPC:
             # BESS to consumer: up to discharge and remaining demand
             constraints += [bess_to_consumer[k] <= discharge[k]]
             constraints += [bess_to_consumer[k] <= demand - pv_to_consumer[k]]
+            # Prevent simultaneous charge and discharge (convex relaxation)
+            constraints += [charge[k] + discharge[k] <= self.bess_power_limit]
             # Grid to consumer: remaining demand
             constraints += [grid_to_consumer[k] == demand - pv_to_consumer[k] - bess_to_consumer[k] + slack[k]]
             # Grid to BESS: up to charge not covered by PV
@@ -82,14 +84,14 @@ class MPC:
             constraints += [grid_to_bess[k] >= 0]
         # Objective: revenue + battery usage reward
         alpha = 0.01  # Usage reward coefficient
+        # Set grid_to_consumer cost to -1 (i.e., grid is slack, not penalized heavily)
         revenue = cp.sum(
             pv_to_consumer * (buy_forecast[:horizon] - lcoe_pv) * self.delta_t +
             pv_to_grid * (sell_forecast[:horizon] - lcoe_pv) * self.delta_t +
             pv_to_bess * (-lcoe_pv) * self.delta_t +
             bess_to_consumer * (buy_forecast[:horizon] - self.lcoe_bess) * self.delta_t +
-            grid_to_consumer * (-buy_forecast[:horizon]) * self.delta_t +
-            grid_to_bess * (-self.lcoe_bess) * self.delta_t -
-            1e5 * slack * self.delta_t
+            grid_to_consumer * (-1) * self.delta_t +  # grid is slack, cost = 1
+            grid_to_bess * (-self.lcoe_bess) * self.delta_t
         )
         bess_usage = cp.sum(charge + discharge) * self.delta_t
         objective = cp.Maximize(revenue + alpha * bess_usage)

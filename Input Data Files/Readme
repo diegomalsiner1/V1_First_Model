@@ -20,3 +20,23 @@ Only optimize the BESS charge/discharge.
 #MODULE_EFF,0.2  # Unused; for Solcast or similar, not in current code
 #albedo,0.2  # Unused; for Solcast or similar, not in current code
 #NOCT,47  # Unused; for Solcast or similar, not in current code
+
+
+
+INFO REGARDING GME MARKETS:
+ Italian Electricity Market Abbreviations
+MGP – Mercato del Giorno Prima (Day‑Ahead Market):
+Where participants submit bids/offers for electricity delivery for the following day; market clearing is done hourly at a marginal price per zone. 
+
+MI – Mercato Infragiornaliero (Intra‑Day Market):
+Allows adjustments to positions defined in the Day‑Ahead Market. Includes auction sessions (MI‑A) and continuous trading sessions (MI‑XBID). 
+thesis.unipd.it
+
+MPEG – Mercato Prodotti Giornalieri (Daily Products Market):
+Continuous trading of daily products (e.g. baseload, peak load delivery profiles). 
+
+MSD – Mercato dei Servizi di Dispacciamento (Integrated Scheduling Process / Ancillary Services Market):
+Terna’s procurement platform for balancing and redispatch services (often split into ex‑ante scheduling and balancing market sessions). It’s not a spot market, but critical for system stability. 
+
+PN – Piattaforma di Nominazione (Nomination Platform):
+Platform for submitting nodal nominations of MGP/MI positions before each quarter‑hour (Q‑57 rule applies). 

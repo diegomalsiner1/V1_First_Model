@@ -170,7 +170,7 @@ class MPC:
         bess_usage = cp.sum(charge + discharge) * self.delta_t
         objective = cp.Maximize(savings + alpha * bess_usage)
         problem = cp.Problem(objective, constraints)
-        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.05, TimeLimit=30)
+        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.1, TimeLimit=10)
         if problem.status == 'optimal':
             try:
                 return {

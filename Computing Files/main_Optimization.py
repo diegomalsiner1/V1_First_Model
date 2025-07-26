@@ -93,7 +93,7 @@ for t in range(data['n_steps']):
 
 # Prepare day labels for plotting
 days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(8)]
+data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(7)]
 
 # Add suffix to distinguish plots
 output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')

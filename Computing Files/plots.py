@@ -4,11 +4,11 @@ import os
 
 def plot_energy_flows(results, data, revenues, save_dir=None):
     """
-    Plot PV, grid, BESS flows, and consumer demand composition.
+    Plot PV, grid, BESS flows, consumer demand composition, and EV demand composition.
     """
-    plt.figure(figsize=(14, 12))
+    plt.figure(figsize=(14, 16))
     # Subplot 1: PV and Grid Flows
-    plt.subplot(3, 1, 1)
+    plt.subplot(4, 1, 1)
     plt.plot(data['time_steps'], data['pv_power'], label='PV Generation (kW)', color='orange', linewidth=1)
     plt.plot(data['time_steps'], results['P_grid_sold'], label='Grid Sold (kW)', color='blue', linewidth=1)
     plt.plot(data['time_steps'], results['P_grid_bought'], label='Grid Bought (kW)', color='magenta', linewidth=1)
@@ -21,7 +21,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     for d in range(1, 7):
         plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
     # Subplot 2: BESS Flows and SOC
-    plt.subplot(3, 1, 2)
+    plt.subplot(4, 1, 2)
     ax1 = plt.gca()
     ax1.plot(data['time_steps'], results['P_BESS_charge'], label='BESS Charge (kW)', color='blue', linewidth=1)
     ax1.plot(data['time_steps'], results['P_BESS_discharge'], label='BESS Discharge (kW)', color='red', linewidth=1)
@@ -39,7 +39,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     ax2.set_ylabel('SOC (kWh)')
     ax2.legend(loc='upper right', fontsize=9)
     # Subplot 3: Consumer Flow Composition
-    plt.subplot(3, 1, 3)
+    plt.subplot(4, 1, 3)
     plt.stackplot(data['time_steps'], results['P_PV_consumer_vals'], results['P_BESS_consumer_vals'], results['P_grid_consumer_vals'], results['slack_vals'],
                   labels=['PV to Consumer (kW)', 'BESS to Consumer (kW)', 'Grid to Consumer (kW)', 'Unmet Demand (kW)'],
                   colors=['orange', 'green', 'blue', 'red'], alpha=0.7)
@@ -47,6 +47,23 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     plt.xlabel('Time (h)')
     plt.ylabel('Power (kW)')
     plt.title(f'Consumer Flow Composition (Self-Sufficiency: {revenues["self_sufficiency"]:.2f}%)')
+    plt.legend(loc='upper right', fontsize=9)
+    plt.grid(True, linestyle=':', linewidth=0.7)
+    plt.xticks(np.arange(0, 168, 24), data['day_labels'])
+    for d in range(1, 7):
+        plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
+    # Subplot 4: EV Flow Composition
+    plt.subplot(4, 1, 4)
+    P_PV_ev = results.get('P_PV_ev_vals', np.zeros(data['n_steps']))
+    P_BESS_ev = results.get('P_BESS_ev_vals', np.zeros(data['n_steps']))
+    P_grid_ev = results.get('P_grid_ev_vals', np.zeros(data['n_steps']))
+    plt.stackplot(data['time_steps'], P_PV_ev, P_BESS_ev, P_grid_ev,
+                  labels=['PV to EV (kW)', 'BESS to EV (kW)', 'Grid to EV (kW)'],
+                  colors=['orange', 'green', 'blue'], alpha=0.7)
+    plt.plot(data['time_steps'], data.get('ev_demand', np.zeros(data['n_steps'])), label='EV Demand (kW)', color='black', linestyle='--', linewidth=1)
+    plt.xlabel('Time (h)')
+    plt.ylabel('Power (kW)')
+    plt.title(f'EV Flow Composition (Renewable Share: {revenues.get("ev_renewable_share", 0):.2f}%)')
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(np.arange(0, 168, 24), data['day_labels'])

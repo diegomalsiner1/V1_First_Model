@@ -11,25 +11,26 @@ data = load_data.load()
 # Assert consistency of data length
 assert len(data['pv_power']) == data['n_steps']
 assert len(data['consumer_demand']) == data['n_steps']
+assert len(data['ev_demand']) == data['n_steps']
 assert len(data['grid_buy_price']) == data['n_steps']
 assert len(data['grid_sell_price']) == data['n_steps']
 
 # MPC Parameters
 horizon = 30  # 6 hours = 30 x 15-min steps
-mpc_controller = mpc.MPC(
-    data['bess_capacity'], data['bess_power_limit'], data['eta_charge'],
-    data['eta_discharge'], data['lcoe_bess'], data['soc_initial'], data['delta_t']
-)
+mpc_controller = mpc.MPC(data['bess_capacity'], data['bess_power_limit'], data['eta_charge'], data['eta_discharge'], data['lcoe_bess'], data['delta_t'])
 
 # Initialize arrays
 soc_actual = np.zeros(data['n_steps'] + 1)
 soc_actual[0] = data['soc_initial']
 P_PV_consumer_vals = np.zeros(data['n_steps'])
+P_PV_ev_vals = np.zeros(data['n_steps'])
 P_PV_BESS_vals = np.zeros(data['n_steps'])
 P_PV_grid_vals = np.zeros(data['n_steps'])
 P_BESS_consumer_vals = np.zeros(data['n_steps'])
+P_BESS_ev_vals = np.zeros(data['n_steps'])
 P_BESS_grid_vals = np.zeros(data['n_steps'])
 P_grid_consumer_vals = np.zeros(data['n_steps'])
+P_grid_ev_vals = np.zeros(data['n_steps'])
 P_grid_BESS_vals = np.zeros(data['n_steps'])
 slack_vals = np.zeros(data['n_steps'])
 
@@ -47,41 +48,50 @@ for t in range(data['n_steps']):
     demand_forecast = pad_to_horizon(data['consumer_demand'][t:t + horizon], horizon)
     buy_forecast = pad_to_horizon(data['grid_buy_price'][t:t + horizon], horizon)
     sell_forecast = pad_to_horizon(data['grid_sell_price'][t:t + horizon], horizon)
-
+    ev_forecast = pad_to_horizon(data['ev_demand'][t:t + horizon], horizon)
+    
     control = mpc_controller.predict(
-        soc_actual[t], pv_forecast, demand_forecast,
+        soc_actual[t], pv_forecast, demand_forecast, ev_forecast,
         buy_forecast, sell_forecast, data['lcoe_pv'], horizon
     )
-
+    
     if control is None:
         print(f"MPC infeasible at t={t}; using fallback (no BESS action).")
         pv_t = data['pv_power'][t]
-        demand_t = data['consumer_demand'][t]
+        consumer_demand_t = data['consumer_demand'][t]
+        ev_demand_t = data['ev_demand'][t]
         buy_t = float(data['grid_buy_price'][t])
         sell_t = float(data['grid_sell_price'][t])
 
-        P_PV_consumer_vals[t] = min(pv_t, demand_t)
+        P_PV_consumer_vals[t] = min(pv_t, consumer_demand_t)
+        pv_surplus_after_consumer = max(pv_t - P_PV_consumer_vals[t], 0)
+        P_PV_ev_vals[t] = min(pv_surplus_after_consumer, ev_demand_t)
+        pv_surplus_after_ev = max(pv_surplus_after_consumer - P_PV_ev_vals[t], 0)
         P_PV_BESS_vals[t] = 0
-        P_PV_grid_vals[t] = max(pv_t - P_PV_consumer_vals[t], 0)
+        P_PV_grid_vals[t] = pv_surplus_after_ev
         P_BESS_consumer_vals[t] = 0
+        P_BESS_ev_vals[t] = 0
         P_BESS_grid_vals[t] = 0
-        P_grid_consumer_vals[t] = max(demand_t - P_PV_consumer_vals[t], 0)
+        P_grid_consumer_vals[t] = max(consumer_demand_t - P_PV_consumer_vals[t], 0)
+        P_grid_ev_vals[t] = max(ev_demand_t - P_PV_ev_vals[t], 0)
         P_grid_BESS_vals[t] = 0
-        slack_vals[t] = max(0, demand_t - (P_PV_consumer_vals[t] + P_grid_consumer_vals[t]))
+        slack_vals[t] = max(0, consumer_demand_t + ev_demand_t - (P_PV_consumer_vals[t] + P_PV_ev_vals[t] + P_grid_consumer_vals[t] + P_grid_ev_vals[t]))
         soc_actual[t + 1] = soc_actual[t]
     else:
         P_PV_consumer_vals[t] = control['pv_to_consumer']
+        P_PV_ev_vals[t] = control['pv_to_ev']
         P_PV_BESS_vals[t] = control['pv_to_bess']
         P_PV_grid_vals[t] = control['pv_to_grid']
         P_BESS_consumer_vals[t] = control['bess_to_consumer']
+        P_BESS_ev_vals[t] = control['bess_to_ev']
         P_BESS_grid_vals[t] = control['bess_to_grid']
         P_grid_consumer_vals[t] = control['grid_to_consumer']
+        P_grid_ev_vals[t] = control['grid_to_ev']
         P_grid_BESS_vals[t] = control['grid_to_bess']
         slack_vals[t] = control['slack']
         soc_actual[t + 1] = control['SOC_next']
 
 # Prepare day labels for plotting
-
 days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(8)]
 
@@ -94,18 +104,21 @@ data['plot_suffix'] = ''  # No suffix for main optimization
 data['plot_suffix'] = ''
 results = {
     'P_PV_consumer_vals': P_PV_consumer_vals,
+    'P_PV_ev_vals': P_PV_ev_vals,
     'P_PV_BESS_vals': P_PV_BESS_vals,
     'P_PV_grid_vals': P_PV_grid_vals,
     'P_BESS_consumer_vals': P_BESS_consumer_vals,
+    'P_BESS_ev_vals': P_BESS_ev_vals,
     'P_BESS_grid_vals': P_BESS_grid_vals,
     'P_grid_consumer_vals': P_grid_consumer_vals,
+    'P_grid_ev_vals': P_grid_ev_vals,
     'P_grid_BESS_vals': P_grid_BESS_vals,
     'SOC_vals': soc_actual,
     'slack_vals': slack_vals,
     'P_BESS_charge': P_PV_BESS_vals + P_grid_BESS_vals,
-    'P_BESS_discharge': P_BESS_consumer_vals + P_BESS_grid_vals,
+    'P_BESS_discharge': P_BESS_consumer_vals + P_BESS_ev_vals + P_BESS_grid_vals,
     'P_grid_sold': P_PV_grid_vals + P_BESS_grid_vals,
-    'P_grid_bought': P_grid_consumer_vals + P_grid_BESS_vals
+    'P_grid_bought': P_grid_consumer_vals + P_grid_ev_vals + P_grid_BESS_vals
 }
 revenues = post_process.compute_revenues(results, data)
 post_process.print_results(revenues, results, data)

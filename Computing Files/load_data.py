@@ -4,6 +4,7 @@ import os
 import API_prices
 import Prices_ITA
 import pv_consumer_data_2024 as pv_data
+import ev_power_profile
 from datetime import datetime, timedelta
 
 def load_constants():
@@ -67,13 +68,22 @@ def load(reference_case=False, use_api=True):
     eta_charge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Charge']['Value'].iloc[0])
     eta_discharge = float(constants_data[constants_data['Parameter'] == 'BESS_Efficiency_Discharge']['Value'].iloc[0])
     soc_initial = float(constants_data[constants_data['Parameter'] == 'SOC_Initial']['Value'].iloc[0])
-    pi_consumer = float(constants_data[constants_data['Parameter'] == 'Consumer_Price']['Value'].iloc[0])
+    def get_param(param_name, default=None):
+        try:
+            return float(constants_data[constants_data['Parameter'] == param_name]['Value'].iloc[0])
+        except (IndexError, KeyError):
+            if default is None:
+                raise ValueError(f"Required parameter {param_name} not found in constants file")
+            return default
+
+    pi_consumer = get_param('Consumer_Price')
+    pi_ev = float(constants_data[constants_data['Parameter'] == 'EV_PRICE']['Value'].iloc[0])
     lcoe_pv = float(constants_data[constants_data['Parameter'] == 'LCOE_PV']['Value'].iloc[0])
     lcoe_bess = float(constants_data[constants_data['Parameter'] == 'LCOE_BESS']['Value'].iloc[0])
     pv_old = float(constants_data[constants_data['Parameter'] == 'PV_OLD']['Value'].iloc[0])
     pv_new = float(constants_data[constants_data['Parameter'] == 'PV_NEW']['Value'].iloc[0])
     bidding_zone = constants_data[constants_data['Parameter'] == 'BIDDING_ZONE']['Value'].iloc[0]
-    
+
     # Fetch prices
     # To switch price source, comment/uncomment the following lines:
     # --- Use API prices ---
@@ -92,12 +102,30 @@ def load(reference_case=False, use_api=True):
     else:
         pv_power = ((pv_new + pv_old)/pv_old) * result['pv_production'] * (1 / delta_t)
     consumer_demand = result['consumer_demand'] * (1 / delta_t)
+    # Load EV charging profile
+    ev_sessions_per_day = int(constants_data[constants_data['Parameter'] == 'EV_NUM_SESSIONS_PER_DAY']['Value'].iloc[0])
+    ev_session_energy = float(constants_data[constants_data['Parameter'] == 'EV_SESSION_ENERGY']['Value'].iloc[0])
+    ev_load_scale = float(constants_data[constants_data['Parameter'] == 'EV_LOAD_SCALE']['Value'].iloc[0])
+    
+    ev_profile = ev_power_profile.generate_ev_charging_profile(
+        start_dt, end_dt, 
+        num_sessions_per_day=ev_sessions_per_day,
+        session_energy=ev_session_energy,
+        load_scale=ev_load_scale
+    )
+    ev_demand = ev_profile['ev_demand'] * (1 / delta_t)
+    
+    # Add EV demand to consumer demand but keep it separate for financial accounting
+    total_demand = consumer_demand + ev_demand
+    
     # Use actual start_dt for weekday and period string
     start_weekday = start_dt.weekday()
     period_str = f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}"
     data = {
         'pv_power': pv_power,
         'consumer_demand': consumer_demand,
+        'ev_demand': ev_demand,
+        'total_demand': total_demand,
         'grid_buy_price': grid_buy_price,
         'grid_sell_price': grid_sell_price,
         'lcoe_pv': lcoe_pv,
@@ -108,6 +136,7 @@ def load(reference_case=False, use_api=True):
         'eta_discharge': eta_discharge,
         'soc_initial': soc_initial,
         'pi_consumer': pi_consumer,
+        'pi_ev': pi_ev,
         'bidding_zone_desc': f"({bidding_zone})",
         'period_str': period_str,
         'start_weekday': start_weekday,

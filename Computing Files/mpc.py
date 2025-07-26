@@ -14,41 +14,66 @@ def load_bess_percent_limit(constants_path=None):
     constants_data = pd.read_csv(constants_path, comment='#')
     return float(constants_data[constants_data['Parameter'] == 'BESS_limit']['Value'].iloc[0])
 
+def load_pi_ev(constants_path=None):
+    """Load EV charging price from constants CSV."""
+    if constants_path is None:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        constants_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
+    constants_data = pd.read_csv(constants_path, comment='#')
+    try:
+        return float(constants_data[constants_data['Parameter'] == 'EV_PRICE']['Value'].iloc[0])
+    except IndexError:
+        logging.warning("pi_ev not found in constants CSV; using default value 0.3")
+        return 0.3  # Default value, e.g., 0.3 $/kWh; adjust as needed
+
 class MPC:
-    def __init__(self, bess_capacity, bess_power_limit, eta_charge, eta_discharge, lcoe_bess, soc_initial, delta_t, constants_path=None):
+    def __init__(self, bess_capacity, bess_power_limit, eta_charge, eta_discharge, lcoe_bess, delta_t, constants_path=None):
         self.bess_capacity = bess_capacity
         self.bess_power_limit = bess_power_limit
         self.eta_charge = eta_charge
         self.eta_discharge = eta_discharge
         self.lcoe_bess = lcoe_bess
-        self.soc_initial = soc_initial
         self.delta_t = delta_t
         self.bess_percent_limit = load_bess_percent_limit(constants_path)
+        self.pi_ev = load_pi_ev(constants_path)
 
-    def predict(self, soc_current, pv_forecast, demand_forecast, buy_forecast, sell_forecast, lcoe_pv, horizon):
-        # Only BESS power is controllable: positive = discharge, negative = charge
+    def predict(self, soc_current, pv_forecast, demand_forecast, ev_forecast, buy_forecast, sell_forecast, lcoe_pv, horizon):
+        # Variables
         P_BESS = cp.Variable(horizon)
         SOC = cp.Variable(horizon + 1)
-        slack = cp.Variable(horizon, nonneg=True)
-        # Auxiliary variables for all flows (all non-negative)
+        
+        # Flow variables including EV
         pv_to_consumer = cp.Variable(horizon, nonneg=True)
-        bess_to_consumer = cp.Variable(horizon, nonneg=True)
-        bess_to_grid = cp.Variable(horizon, nonneg=True)
+        pv_to_ev = cp.Variable(horizon, nonneg=True)
         pv_to_bess = cp.Variable(horizon, nonneg=True)
         pv_to_grid = cp.Variable(horizon, nonneg=True)
-        grid_to_consumer = cp.Variable(horizon, nonneg=True)
-        grid_to_bess = cp.Variable(horizon, nonneg=True)
-        pv_surplus = cp.Variable(horizon, nonneg=True)
+        pv_surplus_after_consumer = cp.Variable(horizon, nonneg=True)
+        pv_surplus_after_ev = cp.Variable(horizon, nonneg=True)
         pv_after_bess = cp.Variable(horizon, nonneg=True)
+
+        bess_to_consumer = cp.Variable(horizon, nonneg=True)
+        bess_to_ev = cp.Variable(horizon, nonneg=True)
+        bess_to_grid = cp.Variable(horizon, nonneg=True)
+        bess_surplus_after_consumer = cp.Variable(horizon, nonneg=True)
+        bess_surplus_after_ev = cp.Variable(horizon, nonneg=True)
+        
+        grid_to_consumer = cp.Variable(horizon, nonneg=True)
+        grid_to_ev = cp.Variable(horizon, nonneg=True)
+        grid_to_bess = cp.Variable(horizon, nonneg=True)
+        
         charge = cp.Variable(horizon, nonneg=True)
         discharge = cp.Variable(horizon, nonneg=True)
         is_charging = cp.Variable(horizon, boolean=True)
+
         constraints = []
         constraints += [SOC[0] == soc_current]
+        
         M = self.bess_power_limit
         for k in range(horizon):
             pv = pv_forecast[k]
-            demand = demand_forecast[k]
+            consumer_demand = demand_forecast[k]
+            ev_demand = ev_forecast[k]
+            
             # BESS power limits
             constraints += [P_BESS[k] <= self.bess_power_limit]
             constraints += [P_BESS[k] >= -self.bess_power_limit]
@@ -66,84 +91,103 @@ class MPC:
             constraints += [SOC[k+1] >= self.bess_percent_limit * self.bess_capacity]
             # PV to consumer: up to demand and PV available
             constraints += [pv_to_consumer[k] <= pv]
-            constraints += [pv_to_consumer[k] <= demand]
+            constraints += [pv_to_consumer[k] <= consumer_demand]
             # PV surplus after consumer
-            constraints += [pv_surplus[k] >= pv - pv_to_consumer[k]]
-            constraints += [pv_surplus[k] >= 0]
-            # PV to BESS: up to charge and PV surplus
+            constraints += [pv_surplus_after_consumer[k] >= pv - pv_to_consumer[k]]
+            constraints += [pv_surplus_after_consumer[k] >= 0]
+            # PV to EV: up to EV demand and surplus after consumer
+            constraints += [pv_to_ev[k] <= pv_surplus_after_consumer[k]]
+            constraints += [pv_to_ev[k] <= ev_demand]
+            # PV surplus after EV
+            constraints += [pv_surplus_after_ev[k] >= pv_surplus_after_consumer[k] - pv_to_ev[k]]
+            constraints += [pv_surplus_after_ev[k] >= 0]
+            # PV to BESS: up to charge and surplus after EV
             constraints += [pv_to_bess[k] <= charge[k]]
-            constraints += [pv_to_bess[k] <= pv_surplus[k]]
+            constraints += [pv_to_bess[k] <= pv_surplus_after_ev[k]]
             # PV after BESS (for grid export)
-            constraints += [pv_after_bess[k] >= pv_surplus[k] - pv_to_bess[k]]
+            constraints += [pv_after_bess[k] >= pv_surplus_after_ev[k] - pv_to_bess[k]]
             constraints += [pv_after_bess[k] >= 0]
-            # PV to grid: remaining PV after consumer and BESS
+            # PV to grid: remaining PV after loads and BESS
             constraints += [pv_to_grid[k] == pv_after_bess[k]]
             # BESS to consumer: up to discharge
             constraints += [bess_to_consumer[k] <= discharge[k]]
-            # BESS to grid: up to discharge
-            constraints += [bess_to_grid[k] <= discharge[k]]
+            # BESS surplus after consumer
+            constraints += [bess_surplus_after_consumer[k] >= discharge[k] - bess_to_consumer[k]]
+            constraints += [bess_surplus_after_consumer[k] >= 0]
+            # BESS to EV: up to surplus after consumer
+            constraints += [bess_to_ev[k] <= bess_surplus_after_consumer[k]]
+            # BESS surplus after EV
+            constraints += [bess_surplus_after_ev[k] >= bess_surplus_after_consumer[k] - bess_to_ev[k]]
+            constraints += [bess_surplus_after_ev[k] >= 0]
+            # BESS to grid: remaining after loads
+            constraints += [bess_to_grid[k] == bess_surplus_after_ev[k]]
             # Discharge split
-            constraints += [bess_to_consumer[k] + bess_to_grid[k] == discharge[k]]
+            constraints += [discharge[k] == bess_to_consumer[k] + bess_to_ev[k] + bess_to_grid[k]]
             # Energy balance constraints
             # PV balance
-            constraints += [pv_to_consumer[k] + pv_to_bess[k] + pv_to_grid[k] == pv]
+            constraints += [pv_to_consumer[k] + pv_to_ev[k] + pv_to_bess[k] + pv_to_grid[k] == pv]
             
             # Consumer balance
-            constraints += [pv_to_consumer[k] + bess_to_consumer[k] + grid_to_consumer[k] == demand]
+            constraints += [pv_to_consumer[k] + bess_to_consumer[k] + grid_to_consumer[k] == consumer_demand]
+           
+            # EV balance
+            constraints += [pv_to_ev[k] + bess_to_ev[k] + grid_to_ev[k] == ev_demand]
             
             # BESS balance
             constraints += [charge[k] == pv_to_bess[k] + grid_to_bess[k]]
-            constraints += [discharge[k] == bess_to_consumer[k] + bess_to_grid[k]]
             
-            # Grid balance (grid acts as slack)
-            constraints += [grid_to_consumer[k] == demand - pv_to_consumer[k] - bess_to_consumer[k]]
+            # Grid balance with strict matching of imports to needs
+            constraints += [grid_to_consumer[k] == consumer_demand - pv_to_consumer[k] - bess_to_consumer[k]]
+            constraints += [grid_to_ev[k] == ev_demand - pv_to_ev[k] - bess_to_ev[k]]
             constraints += [grid_to_bess[k] == charge[k] - pv_to_bess[k]]
+            # Non-negativity
             constraints += [grid_to_bess[k] >= 0]
-            # Remove slack since we don't need it
-            constraints += [slack[k] == 0]
         # Grid balance at each timestep
         grid_import = []
         grid_export = []
         for k in range(horizon):
-            grid_imp_k = grid_to_consumer[k] + grid_to_bess[k]
+            grid_imp_k = grid_to_consumer[k] + grid_to_ev[k] + grid_to_bess[k]
             grid_exp_k = pv_to_grid[k] + bess_to_grid[k]
             grid_import.append(grid_imp_k)
             grid_export.append(grid_exp_k)
         
         # Objective: true financial flows only (no virtual rewards)
-        alpha = 0.0001  # Usage reward coefficient (reduced to avoid excessive cycling)
+        alpha = 0.00001  # Usage reward coefficient (reduced to avoid excessive cycling)
         
         savings = 0
         for k in range(horizon):
+            # Revenue from EV charging (real cash inflow)
+            savings += (pv_to_ev[k] + bess_to_ev[k] + grid_to_ev[k]) * self.pi_ev * self.delta_t
+            
             # Grid exports (revenue)
-            savings += cp.multiply(grid_export[k], sell_forecast[k]) * self.delta_t
+            savings += grid_export[k] * sell_forecast[k] * self.delta_t
             # Grid imports (cost)
-            savings -= cp.multiply(grid_import[k], buy_forecast[k]) * self.delta_t
+            savings -= grid_import[k] * buy_forecast[k] * self.delta_t
             # Internal costs (LCOE)
-            savings -= cp.multiply(pv_to_consumer[k], lcoe_pv) * self.delta_t
-            savings -= cp.multiply(bess_to_consumer[k], self.lcoe_bess) * self.delta_t
+            savings -= (pv_to_consumer[k] + pv_to_ev[k]) * lcoe_pv * self.delta_t
+            savings -= (bess_to_consumer[k] + bess_to_ev[k]) * self.lcoe_bess * self.delta_t
         
         bess_usage = cp.sum(charge + discharge) * self.delta_t
         objective = cp.Maximize(savings + alpha * bess_usage)
         problem = cp.Problem(objective, constraints)
-        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.05, TimeLimit=30)
+        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.01)
         if problem.status == 'optimal':
             try:
                 return {
                     'P_BESS': P_BESS.value[0],
                     'SOC_next': SOC.value[1],
                     'pv_to_consumer': pv_to_consumer.value[0],
+                    'pv_to_ev': pv_to_ev.value[0],  # Add this
                     'bess_to_consumer': bess_to_consumer.value[0],
+                    'bess_to_ev': bess_to_ev.value[0],  # Add this
                     'bess_to_grid': bess_to_grid.value[0],
                     'pv_to_bess': pv_to_bess.value[0],
                     'pv_to_grid': pv_to_grid.value[0],
                     'grid_to_consumer': grid_to_consumer.value[0],
+                    'grid_to_ev': grid_to_ev.value[0],  # Add this
                     'grid_to_bess': grid_to_bess.value[0],
-                    'slack': 0.0  # Since we constrain slack to be 0
+                    'slack': 0.0
                 }
             except AttributeError as e:
                 logging.error(f"Error accessing solution values: {e}")
                 return None
-        else:
-            logging.info("MPC infeasible at current step.")
-            return None

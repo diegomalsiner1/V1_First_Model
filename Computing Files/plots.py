@@ -17,7 +17,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     plt.title('PV and Grid Flows')
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
-    plt.xticks(np.arange(0, 169, 24), data['day_labels'])
+    plt.xticks(np.arange(0, 168, 24), data['day_labels'])
     for d in range(1, 7):
         plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
     # Subplot 2: BESS Flows and SOC
@@ -30,7 +30,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     ax1.set_title('BESS Flows and SOC')
     ax1.legend(loc='upper left', fontsize=9)
     ax1.grid(True, linestyle=':', linewidth=0.7)
-    ax1.set_xticks(np.arange(0, 169, 24))
+    ax1.set_xticks(np.arange(0, 168, 24))
     ax1.set_xticklabels(data['day_labels'])
     for d in range(1, 7):
         ax1.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
@@ -49,7 +49,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     plt.title(f'Consumer Flow Composition (Self-Sufficiency: {revenues["self_sufficiency"]:.2f}%)')
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
-    plt.xticks(np.arange(0, 169, 24), data['day_labels'])
+    plt.xticks(np.arange(0, 168, 24), data['day_labels'])
     for d in range(1, 7):
         plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
     plt.subplots_adjust(hspace=0.35, top=0.95, bottom=0.06, left=0.07, right=0.97)
@@ -78,7 +78,7 @@ def plot_financials(revenues, data, save_dir=None):
     plt.title(f'Energy Market Prices\n{data["bidding_zone_desc"]}\n{data["period_str"]}')
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
-    plt.xticks(np.arange(0, 169, 24), data['day_labels'])
+    plt.xticks(np.arange(0, 168, 24), data['day_labels'])
     for d in range(1, 7):
         plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
     # Subplot 2: Revenue and Cost Streams
@@ -95,7 +95,7 @@ def plot_financials(revenues, data, save_dir=None):
     plt.title('Revenue and Cost Streams')
     plt.legend(loc='upper right', fontsize=9, ncol=2)
     plt.grid(True, linestyle=':', linewidth=0.7)
-    plt.xticks(np.arange(0, 169, 24), data['day_labels'])
+    plt.xticks(np.arange(0, 168, 24), data['day_labels'])
     for d in range(1, 7):
         plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
     # Subplot 3: Total and Cumulative Revenue
@@ -107,7 +107,7 @@ def plot_financials(revenues, data, save_dir=None):
     ax1.set_title('Total Revenue per Step and Cumulative')
     ax1.legend(loc='upper left', fontsize=9)
     ax1.grid(True, linestyle=':', linewidth=0.7)
-    ax1.set_xticks(np.arange(0, 169, 24))
+    ax1.set_xticks(np.arange(0, 168, 24))
     ax1.set_xticklabels(data['day_labels'])
     for d in range(1, 7):
         ax1.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)

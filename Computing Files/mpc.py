@@ -33,6 +33,7 @@ class MPC:
         # Auxiliary variables for all flows (all non-negative)
         pv_to_consumer = cp.Variable(horizon, nonneg=True)
         bess_to_consumer = cp.Variable(horizon, nonneg=True)
+        bess_to_grid = cp.Variable(horizon, nonneg=True)
         pv_to_bess = cp.Variable(horizon, nonneg=True)
         pv_to_grid = cp.Variable(horizon, nonneg=True)
         grid_to_consumer = cp.Variable(horizon, nonneg=True)
@@ -41,8 +42,10 @@ class MPC:
         pv_after_bess = cp.Variable(horizon, nonneg=True)
         charge = cp.Variable(horizon, nonneg=True)
         discharge = cp.Variable(horizon, nonneg=True)
+        is_charging = cp.Variable(horizon, boolean=True)
         constraints = []
         constraints += [SOC[0] == soc_current]
+        M = self.bess_power_limit
         for k in range(horizon):
             pv = pv_forecast[k]
             demand = demand_forecast[k]
@@ -54,6 +57,9 @@ class MPC:
             constraints += [charge[k] >= 0]
             constraints += [discharge[k] >= P_BESS[k]]
             constraints += [discharge[k] >= 0]
+            # Big-M mutual exclusivity
+            constraints += [charge[k] <= M * is_charging[k]]
+            constraints += [discharge[k] <= M * (1 - is_charging[k])]
             # SOC update
             constraints += [SOC[k+1] == SOC[k] + self.eta_charge * charge[k] * self.delta_t - (discharge[k] / self.eta_discharge) * self.delta_t]
             constraints += [SOC[k+1] <= self.bess_capacity]
@@ -72,43 +78,72 @@ class MPC:
             constraints += [pv_after_bess[k] >= 0]
             # PV to grid: remaining PV after consumer and BESS
             constraints += [pv_to_grid[k] == pv_after_bess[k]]
-            # BESS to consumer: up to discharge and remaining demand
+            # BESS to consumer: up to discharge
             constraints += [bess_to_consumer[k] <= discharge[k]]
-            constraints += [bess_to_consumer[k] <= demand - pv_to_consumer[k]]
-            # Prevent simultaneous charge and discharge (convex relaxation)
-            constraints += [charge[k] + discharge[k] <= self.bess_power_limit]
-            # Grid to consumer: remaining demand
-            constraints += [grid_to_consumer[k] == demand - pv_to_consumer[k] - bess_to_consumer[k] + slack[k]]
-            # Grid to BESS: up to charge not covered by PV
+            # BESS to grid: up to discharge
+            constraints += [bess_to_grid[k] <= discharge[k]]
+            # Discharge split
+            constraints += [bess_to_consumer[k] + bess_to_grid[k] == discharge[k]]
+            # Energy balance constraints
+            # PV balance
+            constraints += [pv_to_consumer[k] + pv_to_bess[k] + pv_to_grid[k] == pv]
+            
+            # Consumer balance
+            constraints += [pv_to_consumer[k] + bess_to_consumer[k] + grid_to_consumer[k] == demand]
+            
+            # BESS balance
+            constraints += [charge[k] == pv_to_bess[k] + grid_to_bess[k]]
+            constraints += [discharge[k] == bess_to_consumer[k] + bess_to_grid[k]]
+            
+            # Grid balance (grid acts as slack)
+            constraints += [grid_to_consumer[k] == demand - pv_to_consumer[k] - bess_to_consumer[k]]
             constraints += [grid_to_bess[k] == charge[k] - pv_to_bess[k]]
             constraints += [grid_to_bess[k] >= 0]
-        # Objective: revenue + battery usage reward
-        alpha = 0.01  # Usage reward coefficient
-        # Set grid_to_consumer cost to -1 (i.e., grid is slack, not penalized heavily)
-        revenue = cp.sum(
-            pv_to_consumer * (buy_forecast[:horizon] - lcoe_pv) * self.delta_t +
-            pv_to_grid * (sell_forecast[:horizon] - lcoe_pv) * self.delta_t +
-            pv_to_bess * (-lcoe_pv) * self.delta_t +
-            bess_to_consumer * (buy_forecast[:horizon] - self.lcoe_bess) * self.delta_t +
-            grid_to_consumer * (-1) * self.delta_t +  # grid is slack, cost = 1
-            grid_to_bess * (-self.lcoe_bess) * self.delta_t
-        )
+            # Remove slack since we don't need it
+            constraints += [slack[k] == 0]
+        # Grid balance at each timestep
+        grid_import = []
+        grid_export = []
+        for k in range(horizon):
+            grid_imp_k = grid_to_consumer[k] + grid_to_bess[k]
+            grid_exp_k = pv_to_grid[k] + bess_to_grid[k]
+            grid_import.append(grid_imp_k)
+            grid_export.append(grid_exp_k)
+        
+        # Objective: true financial flows only (no virtual rewards)
+        alpha = 0.0001  # Usage reward coefficient (reduced to avoid excessive cycling)
+        
+        savings = 0
+        for k in range(horizon):
+            # Grid exports (revenue)
+            savings += cp.multiply(grid_export[k], sell_forecast[k]) * self.delta_t
+            # Grid imports (cost)
+            savings -= cp.multiply(grid_import[k], buy_forecast[k]) * self.delta_t
+            # Internal costs (LCOE)
+            savings -= cp.multiply(pv_to_consumer[k], lcoe_pv) * self.delta_t
+            savings -= cp.multiply(bess_to_consumer[k], self.lcoe_bess) * self.delta_t
+        
         bess_usage = cp.sum(charge + discharge) * self.delta_t
-        objective = cp.Maximize(revenue + alpha * bess_usage)
+        objective = cp.Maximize(savings + alpha * bess_usage)
         problem = cp.Problem(objective, constraints)
-        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.005)
+        problem.solve(solver=cp.GUROBI, verbose=True, MIPGap=0.05, TimeLimit=30)
         if problem.status == 'optimal':
-            return {
-                'P_BESS': P_BESS.value[0],
-                'SOC_next': SOC.value[1],
-                'pv_to_consumer': pv_to_consumer.value[0],
-                'bess_to_consumer': bess_to_consumer.value[0],
-                'pv_to_bess': pv_to_bess.value[0],
-                'pv_to_grid': pv_to_grid.value[0],
-                'grid_to_consumer': grid_to_consumer.value[0],
-                'grid_to_bess': grid_to_bess.value[0],
-                'slack': slack.value[0]
-            }
+            try:
+                return {
+                    'P_BESS': P_BESS.value[0],
+                    'SOC_next': SOC.value[1],
+                    'pv_to_consumer': pv_to_consumer.value[0],
+                    'bess_to_consumer': bess_to_consumer.value[0],
+                    'bess_to_grid': bess_to_grid.value[0],
+                    'pv_to_bess': pv_to_bess.value[0],
+                    'pv_to_grid': pv_to_grid.value[0],
+                    'grid_to_consumer': grid_to_consumer.value[0],
+                    'grid_to_bess': grid_to_bess.value[0],
+                    'slack': 0.0  # Since we constrain slack to be 0
+                }
+            except AttributeError as e:
+                logging.error(f"Error accessing solution values: {e}")
+                return None
         else:
             logging.info("MPC infeasible at current step.")
             return None

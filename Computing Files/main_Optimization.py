@@ -70,13 +70,13 @@ for t in range(data['n_steps']):
         slack_vals[t] = max(0, demand_t - (P_PV_consumer_vals[t] + P_grid_consumer_vals[t]))
         soc_actual[t + 1] = soc_actual[t]
     else:
-        P_PV_consumer_vals[t] = control['P_PV_cons']
-        P_PV_BESS_vals[t] = control['P_PV_BESS']
-        P_PV_grid_vals[t] = control['P_PV_grid']
-        P_BESS_consumer_vals[t] = control['P_BESS_cons']
-        P_BESS_grid_vals[t] = control['P_BESS_grid']
-        P_grid_consumer_vals[t] = control['P_grid_cons']
-        P_grid_BESS_vals[t] = control['P_grid_BESS']
+        P_PV_consumer_vals[t] = control['pv_to_consumer']
+        P_PV_BESS_vals[t] = control['pv_to_bess']
+        P_PV_grid_vals[t] = control['pv_to_grid']
+        P_BESS_consumer_vals[t] = control['bess_to_consumer']
+        P_BESS_grid_vals[t] = control['bess_to_grid']
+        P_grid_consumer_vals[t] = control['grid_to_consumer']
+        P_grid_BESS_vals[t] = control['grid_to_bess']
         slack_vals[t] = control['slack']
         soc_actual[t + 1] = control['SOC_next']
 

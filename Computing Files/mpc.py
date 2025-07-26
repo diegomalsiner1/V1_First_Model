@@ -36,6 +36,7 @@ class MPC:
         self.delta_t = delta_t
         self.bess_percent_limit = load_bess_percent_limit(constants_path)
         self.pi_ev = load_pi_ev(constants_path)
+        self.big_M = 1e6  # Large constant for Big-M constraints
 
     def predict(self, soc_current, pv_forecast, demand_forecast, ev_forecast, buy_forecast, sell_forecast, lcoe_pv, horizon):
         # Variables
@@ -64,6 +65,9 @@ class MPC:
         charge = cp.Variable(horizon, nonneg=True)
         discharge = cp.Variable(horizon, nonneg=True)
         is_charging = cp.Variable(horizon, boolean=True)
+        
+        # Binary variable to prevent simultaneous import and export
+        u = cp.Variable(horizon, boolean=True)  # 1 if importing, 0 if exporting
 
         constraints = []
         constraints += [SOC[0] == soc_current]
@@ -82,7 +86,7 @@ class MPC:
             constraints += [charge[k] >= 0]
             constraints += [discharge[k] >= P_BESS[k]]
             constraints += [discharge[k] >= 0]
-            # Big-M mutual exclusivity
+            # Big-M mutual exclusivity for charge/discharge
             constraints += [charge[k] <= M * is_charging[k]]
             constraints += [discharge[k] <= M * (1 - is_charging[k])]
             # SOC update
@@ -150,6 +154,10 @@ class MPC:
             grid_exp_k = pv_to_grid[k] + bess_to_grid[k]
             grid_import.append(grid_imp_k)
             grid_export.append(grid_exp_k)
+            
+            # Prevent simultaneous import and export
+            constraints += [grid_imp_k <= self.big_M * u[k]]
+            constraints += [grid_exp_k <= self.big_M * (1 - u[k])]
         
         # Objective: true financial flows only (no virtual rewards)
         alpha = 0.00001  # Usage reward coefficient (reduced to avoid excessive cycling)
@@ -163,9 +171,9 @@ class MPC:
             savings += grid_export[k] * sell_forecast[k] * self.delta_t
             # Grid imports (cost)
             savings -= grid_import[k] * buy_forecast[k] * self.delta_t
-            # Internal costs (LCOE)
-            savings -= (pv_to_consumer[k] + pv_to_ev[k]) * lcoe_pv * self.delta_t
-            savings -= (bess_to_consumer[k] + bess_to_ev[k]) * self.lcoe_bess * self.delta_t
+            # Internal costs (LCOE) for all PV and BESS flows
+            savings -= (pv_to_consumer[k] + pv_to_ev[k] + pv_to_bess[k] + pv_to_grid[k]) * lcoe_pv * self.delta_t
+            savings -= (bess_to_consumer[k] + bess_to_ev[k] + bess_to_grid[k]) * self.lcoe_bess * self.delta_t
         
         bess_usage = cp.sum(charge + discharge) * self.delta_t
         objective = cp.Maximize(savings + alpha * bess_usage)

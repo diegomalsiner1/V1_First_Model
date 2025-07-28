@@ -59,7 +59,7 @@ class MPC:
         n.add("Load", "EV", bus="AC", p_set=ev_forecast)
 
         # Run linear optimal power flow (LOPF)
-        n.optimize.solve_network(solver_name="gurobi")
+        n.lopf(n.snapshots, solver_name="gurobi")
         
         # Extract results for the first step (MPC receding horizon)
         pv_to_dc = n.generators_t.p["PV"].values[0]

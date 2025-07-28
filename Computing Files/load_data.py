@@ -77,13 +77,14 @@ def load(reference_case=False, use_api=True):
             return default
 
     pi_consumer = get_param('Consumer_Price')
-    pi_ev = float(constants_data[constants_data['Parameter'] == 'EV_PRICE']['Value'].iloc[0])
-    lcoe_pv = float(constants_data[constants_data['Parameter'] == 'LCOE_PV']['Value'].iloc[0])
+    # Get EV price
+    pi_ev = get_param('EV_PRICE', 0.6)  # Default to 0.6 EUR/kWh if not specified
+    lcoe_pv = get_param('LCOE_PV')
     lcoe_bess = float(constants_data[constants_data['Parameter'] == 'LCOE_BESS']['Value'].iloc[0])
     pv_old = float(constants_data[constants_data['Parameter'] == 'PV_OLD']['Value'].iloc[0])
     pv_new = float(constants_data[constants_data['Parameter'] == 'PV_NEW']['Value'].iloc[0])
     bidding_zone = constants_data[constants_data['Parameter'] == 'BIDDING_ZONE']['Value'].iloc[0]
-
+    
     # Fetch prices
     # To switch price source, comment/uncomment the following lines:
     # --- Use API prices ---
@@ -130,13 +131,13 @@ def load(reference_case=False, use_api=True):
         'grid_sell_price': grid_sell_price,
         'lcoe_pv': lcoe_pv,
         'lcoe_bess': lcoe_bess,
+        'pi_ev': pi_ev,  # Add EV price to data dictionary
         'bess_capacity': bess_capacity,
         'bess_power_limit': bess_power_limit,
         'eta_charge': eta_charge,
         'eta_discharge': eta_discharge,
         'soc_initial': soc_initial,
         'pi_consumer': pi_consumer,
-        'pi_ev': pi_ev,
         'bidding_zone_desc': f"({bidding_zone})",
         'period_str': period_str,
         'start_weekday': start_weekday,

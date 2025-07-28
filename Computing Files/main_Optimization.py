@@ -35,10 +35,7 @@ assert len(data['grid_sell_price']) == data['n_steps']
 
 # MPC Parameters
 horizon = 30  # 6 hours = 30 x 15-min steps
-mpc_controller = mpc.MPC(
-    data['bess_capacity'], data['bess_power_limit'], data['eta_charge'],
-    data['eta_discharge'], data['lcoe_bess'], data['soc_initial'], data['delta_t']
-)
+mpc_controller = mpc.MPC()
 
 # Initialize arrays including EV-related variables
 soc_actual = np.zeros(data['n_steps'] + 1)

@@ -11,23 +11,22 @@ def compute_revenues(results, data):
     Returns:
         dict: Revenue streams and self-sufficiency ratio.
     """
-    # Map BESS dispatch to BESS-to-consumer and BESS-to-grid flows
-    # Assume BESS discharges first to consumer, then to grid
+    # Map BESS discharge to consumer, EV, and grid
     bess_discharge = results.get('P_BESS_discharge', np.zeros_like(results['P_BESS_consumer_vals']))
     consumer_demand = data['consumer_demand']
-    pv_to_consumer = results['P_PV_consumer_vals']
-    grid_to_consumer = results['P_grid_consumer_vals']
-    # Calculate unmet demand after PV and grid
-    unmet_consumer = consumer_demand - pv_to_consumer - grid_to_consumer
-    bess_to_consumer = np.minimum(bess_discharge, np.maximum(unmet_consumer, 0))
-    bess_to_grid = bess_discharge - bess_to_consumer
-    bess_to_grid = np.maximum(bess_to_grid, 0)
-    # For BESS to EV, assume zero unless you have explicit logic
-    bess_to_ev = np.zeros_like(bess_discharge)
-    # Update results for post-processing
+    ev_demand = data['ev_demand']
+    pv_bess_to_consumer = results['P_PV_consumer_vals']
+    pv_bess_to_ev = results['P_PV_ev_vals']
+    pv_bess_to_grid = results['P_PV_grid_vals']
+    # Assign BESS discharge to consumer, then EV, then grid
+    bess_to_consumer = np.minimum(bess_discharge, np.maximum(consumer_demand - pv_bess_to_consumer, 0))
+    bess_to_ev = np.minimum(np.maximum(bess_discharge - bess_to_consumer, 0), np.maximum(ev_demand - pv_bess_to_ev, 0))
+    bess_to_grid = np.maximum(bess_discharge - bess_to_consumer - bess_to_ev, 0)
     results['P_BESS_consumer_vals'] = bess_to_consumer
-    results['P_BESS_grid_vals'] = bess_to_grid
     results['P_BESS_ev_vals'] = bess_to_ev
+    results['P_BESS_grid_vals'] = bess_to_grid
+    # Grid sold is PV+BESS to grid
+    results['P_grid_sold'] = pv_bess_to_grid + bess_to_grid
 
     # Vectorized revenue calculations using NumPy for efficiency and consistency
     # Regular consumer revenue

@@ -15,7 +15,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     # Subplot 1: PV and Grid Flowss
     plt.subplot(3, 1, 1)
     plt.plot(data['time_steps'], data['pv_power'], label='PV Generation (kW)', color='orange', linewidth=1)
-    plt.plot(data['time_steps'], results['P_grid_sold'], label='Grid Sold (kW)', color='blue', linewidth=1)
+    plt.plot(data['time_steps'], results['P_grid_sold'], label='Grid Sold (kW)', color='purple', linewidth=1)
     plt.plot(data['time_steps'], results['P_grid_bought'], label='Grid Bought (kW)', color='magenta', linewidth=1)
     plt.xlabel('Time (h)')
     plt.ylabel('Power (kW)')
@@ -26,7 +26,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     for d in range(1, 7):
         plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
 
-    # Subplot 2: BESS Flows and SOC
+    # Subplot 2: BESS Flows and SOC (absolute units)
     plt.subplot(3, 1, 2)
     ax1 = plt.gca()
     ax1.plot(data['time_steps'], results['P_BESS_charge'], label='BESS Charge (kW)', color='blue', linewidth=1)
@@ -45,7 +45,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     ax2.set_ylabel('SOC (kWh)')
     ax2.legend(loc='upper right', fontsize=9)
 
-    # Subplot 3: Consumer and EV Flow Composition
+    # Subplot 3: Consumer and EV Flow Composition (show BESS flows if available)
     plt.subplot(3, 1, 3)
     plt.stackplot(data['time_steps'],
                  results['P_PV_consumer_vals'],

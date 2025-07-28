@@ -11,24 +11,27 @@ print("Network dir:", dir(pypsa.Network()))
 
 logging.basicConfig(level=logging.INFO)
 
-def load_bess_percent_limit(constants_path=None):
-    """Load BESS percent limit from constants CSV."""
+def load_bess_params(constants_path=None):
     if constants_path is None:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         constants_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
     constants_data = pd.read_csv(constants_path, comment='#')
-    return float(constants_data[constants_data['Parameter'] == 'BESS_limit']['Value'].iloc[0])
+    params = {}
+    for key in ['BESS_Capacity', 'BESS_Power_Limit', 'BESS_Efficiency_Charge', 'BESS_Efficiency_Discharge', 'SOC_Initial', 'BESS_limit']:
+        params[key] = float(constants_data[constants_data['Parameter'] == key]['Value'].iloc[0])
+    return params
 
 class MPC:
-    def __init__(self, bess_capacity, bess_power_limit, eta_charge, eta_discharge, lcoe_bess, soc_initial, delta_t, constants_path=None):
-        self.bess_capacity = bess_capacity
-        self.bess_power_limit = bess_power_limit
-        self.eta_charge = eta_charge
-        self.eta_discharge = eta_discharge
-        self.lcoe_bess = lcoe_bess
-        self.soc_initial = soc_initial
-        self.delta_t = delta_t
-        self.bess_percent_limit = load_bess_percent_limit(constants_path)
+    def __init__(self, constants_path=None):
+        params = load_bess_params(constants_path)
+        self.bess_capacity = params['BESS_Capacity']
+        self.bess_power_limit = params['BESS_Power_Limit']
+        self.eta_charge = params['BESS_Efficiency_Charge']
+        self.eta_discharge = params['BESS_Efficiency_Discharge']
+        self.lcoe_bess = 0
+        self.soc_initial = params['SOC_Initial']
+        self.delta_t = 0.25  # 15 min
+        self.bess_percent_limit = params['BESS_limit']
 
     def predict(self, soc, pv_forecast, demand_forecast, ev_forecast, buy_forecast, sell_forecast, lcoe_pv, pi_ev, horizon):
         # Prepare time index for PyPSA
@@ -53,8 +56,10 @@ class MPC:
               max_hours=self.bess_capacity/self.bess_power_limit,
               efficiency_store=self.eta_charge,
               efficiency_dispatch=self.eta_discharge,
-              marginal_cost=0,  # Set to zero to allow full arbitrage
-              state_of_charge_initial=soc/self.bess_capacity)
+              marginal_cost=0,
+              state_of_charge_initial=soc/self.bess_capacity,
+              state_of_charge_min=self.bess_percent_limit,
+              state_of_charge_max=1.0)
 
         # Add grid import/export as Links to Grid bus
         n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=1e6, efficiency=1.0, marginal_cost=buy_forecast)
@@ -108,5 +113,11 @@ class MPC:
             'pv_bess_to_grid': pv_bess_to_grid,
             'grid_to_consumer': grid_to_consumer,
             'grid_to_ev': grid_to_ev,
+            'bess_capacity': self.bess_capacity,
+            'bess_power_limit': self.bess_power_limit,
+            'bess_efficiency_charge': self.eta_charge,
+            'bess_efficiency_discharge': self.eta_discharge,
+            'soc_initial': self.soc_initial,
+            'bess_percent_limit': self.bess_percent_limit,
             'slack': 0.0
         }

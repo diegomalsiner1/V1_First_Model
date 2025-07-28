@@ -4,6 +4,8 @@ import numpy as np
 import logging
 import os
 
+print(pypsa.__version__)
+
 logging.basicConfig(level=logging.INFO)
 
 def load_bess_percent_limit(constants_path=None):
@@ -50,13 +52,19 @@ class MPC:
               marginal_cost=self.lcoe_bess,
               state_of_charge_initial=soc/self.bess_capacity)
 
-        # Add grid import/export (AC bus)
-        n.add("Generator", "Grid_Import", bus="AC", p_nom=1e6, marginal_cost=buy_forecast)
-        n.add("Generator", "Grid_Export", bus="AC", p_nom=1e6, marginal_cost=-sell_forecast)
+        # Add grid import/export (AC bus) with scalar marginal_cost
+        n.add("Generator", "Grid_Import", bus="AC", p_nom=1e6, marginal_cost=0)
+        n.add("Generator", "Grid_Export", bus="AC", p_nom=1e6, marginal_cost=0)
 
-        # Add consumer and EV loads (AC bus)
-        n.add("Load", "Consumer", bus="AC", p_set=demand_forecast)
-        n.add("Load", "EV", bus="AC", p_set=ev_forecast)
+        # Add consumer and EV loads (AC bus) with scalar p_set
+        n.add("Load", "Consumer", bus="AC", p_set=0)
+        n.add("Load", "EV", bus="AC", p_set=0)
+
+        # Assign time series to generators and loads
+        n.generators_t.marginal_cost.loc[:, "Grid_Import"] = buy_forecast
+        n.generators_t.marginal_cost.loc[:, "Grid_Export"] = -sell_forecast
+        n.loads_t.p_set.loc[:, "Consumer"] = demand_forecast
+        n.loads_t.p_set.loc[:, "EV"] = ev_forecast
 
         # Run linear optimal power flow (LOPF)
         n.lopf(n.snapshots, solver_name="gurobi")

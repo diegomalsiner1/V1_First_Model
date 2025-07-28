@@ -2,8 +2,11 @@ import load_data
 import post_process
 import plots
 import mpc
+import sys
 import numpy as np
 import os
+
+print(sys.executable)
 
 # Load all input data
 data = load_data.load()
@@ -119,7 +122,9 @@ output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Out
 os.makedirs(output_dir, exist_ok=True)
 data['plot_suffix'] = ''  # No suffix for main optimization
 
-# Initialize slack_vals
+# Initialize slack_valsprint("PyPSA version:", pypsa.__version__)
+print("Has lopf:", hasattr(n, 'lopf'))
+print("Network methods:", dir(n))
 slack_vals = np.zeros(data['n_steps'])  # Add explicit slack initialization
 
 # Compile results

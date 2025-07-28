@@ -122,6 +122,9 @@ output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Out
 os.makedirs(output_dir, exist_ok=True)
 data['plot_suffix'] = ''  # No suffix for main optimization
 
+# Initialize slack_vals as zeros for compatibility
+slack_vals = np.zeros(data['n_steps'])
+
 # Compile results
 data['plot_suffix'] = ''
 results = {

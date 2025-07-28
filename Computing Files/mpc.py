@@ -46,13 +46,13 @@ class MPC:
         # Add PV generator (DC bus)
         n.add("Generator", "PV", bus="DC", p_nom=max(pv_forecast), p_max_pu=pv_forecast/np.max(pv_forecast), marginal_cost=lcoe_pv)
 
-        # Add BESS (DC bus)
+        # Add BESS (DC bus) with zero marginal cost to enable arbitrage
         n.add("StorageUnit", "BESS", bus="DC",
               p_nom=self.bess_power_limit,
               max_hours=self.bess_capacity/self.bess_power_limit,
               efficiency_store=self.eta_charge,
               efficiency_dispatch=self.eta_discharge,
-              marginal_cost=self.lcoe_bess,
+              marginal_cost=0,  # Set to zero to allow arbitrage
               state_of_charge_initial=soc/self.bess_capacity)
 
         # Add grid import/export (AC bus) with scalar marginal_cost
@@ -71,8 +71,8 @@ class MPC:
 
         # Run linear optimal power flow (LOPF)
         n.optimize.create_model()
-        n.optimize.solve_model(solver_name="gurobi")
-        
+        n.optimize.solve_model(solver_name="gurobi", verborse=True, MIPGap=0.025)
+
         # Extract results for the first step (MPC receding horizon)
         pv_to_dc = n.generators_t.p["PV"].values[0]
         bess_to_dc = n.storage_units_t.p["BESS"].values[0]

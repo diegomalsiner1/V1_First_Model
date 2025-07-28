@@ -99,6 +99,7 @@ def plot_financials(revenues, data, save_dir=None):
     plt.xticks(np.arange(0, 168, 24), data['day_labels'])
     for d in range(1, 7):
         plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
+
     # Subplot 2: Revenue and Cost Streams
     plt.subplot(3, 1, 2)
     plt.plot(data['time_steps'], revenues['pv_to_consumer_rev'], label='PV to Consumer Revenue (Euro/step)', color='orange', linewidth=1)
@@ -106,16 +107,15 @@ def plot_financials(revenues, data, save_dir=None):
     plt.plot(data['time_steps'], revenues['pv_to_bess_cost'], label='PV to BESS Cost (Euro/step)', color='gold', linewidth=1)
     plt.plot(data['time_steps'], revenues['bess_to_consumer_rev'], label='BESS to Consumer Revenue (Euro/step)', color='green', linewidth=1)
     plt.plot(data['time_steps'], revenues['bess_to_grid_rev'], label='BESS to Grid Revenue (Euro/step)', color='darkgreen', linewidth=1)
-    plt.plot(data['time_steps'], revenues['grid_buy_cost'], label='Grid Buy Cost (Euro/step)', color='magenta', linewidth=1)
-    plt.plot(data['time_steps'], revenues['penalty_per_step'], label='Penalty Cost (Euro/step)', color='red', linestyle='--', linewidth=1)
     plt.xlabel('Time (h)')
     plt.ylabel('Euro/step')
     plt.title('Revenue and Cost Streams')
     plt.legend(loc='upper right', fontsize=9, ncol=2)
     plt.grid(True, linestyle=':', linewidth=0.7)
-    plt.xticks(np.arange(0, 169, 24), data['day_labels'])
+    plt.xticks(np.arange(0, 168, 24), data['day_labels'])
     for d in range(1, 7):
         plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
+
     # Subplot 3: Total and Cumulative Revenue
     plt.subplot(3, 1, 3)
     ax1 = plt.gca()
@@ -125,7 +125,7 @@ def plot_financials(revenues, data, save_dir=None):
     ax1.set_title('Total Revenue per Step and Cumulative')
     ax1.legend(loc='upper left', fontsize=9)
     ax1.grid(True, linestyle=':', linewidth=0.7)
-    ax1.set_xticks(np.arange(0, 169, 24))
+    ax1.set_xticks(np.arange(0, 168, 24))
     ax1.set_xticklabels(data['day_labels'])
     for d in range(1, 7):
         ax1.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)

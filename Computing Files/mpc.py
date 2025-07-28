@@ -4,7 +4,10 @@ import numpy as np
 import logging
 import os
 
-print(pypsa.__version__)
+print("PyPSA version:", pypsa.__version__)
+print("PyPSA file:", pypsa.__file__)
+print("Has lopf:", hasattr(pypsa.Network(), 'lopf'))
+print("Network dir:", dir(pypsa.Network()))
 
 logging.basicConfig(level=logging.INFO)
 
@@ -67,7 +70,8 @@ class MPC:
         n.loads_t.p_set.loc[:, "EV"] = ev_forecast
 
         # Run linear optimal power flow (LOPF)
-        n.lopf(n.snapshots, solver_name="gurobi")
+        n.optimize.create_model()
+        n.optimize.solve_model(solver_name="gurobi")
         
         # Extract results for the first step (MPC receding horizon)
         pv_to_dc = n.generators_t.p["PV"].values[0]

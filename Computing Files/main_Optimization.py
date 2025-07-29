@@ -36,7 +36,7 @@ assert len(data['grid_sell_price']) == data['n_steps']
 
 # MPC Parameters
 horizon = 24  # 6 hours = 30 x 15-min steps
-mpc_controller = MPC()
+mpc_controller = MPC(delta_t=data['delta_t'])
 
 # Initialize arrays including EV-related variables
 n_steps = data['n_steps']

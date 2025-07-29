@@ -138,10 +138,13 @@ def plot_financials(revenues, data, save_dir=None):
     ax2.legend(loc='upper right', fontsize=9)
     plt.subplots_adjust(hspace=0.35, top=0.95, bottom=0.06, left=0.07, right=0.97)
     plt.tight_layout(pad=1.5)
-    if save_dir is None:
-        save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    # Always save to Output Files in the V1_First_Model folder
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # V1_First_Model
+    output_dir = os.path.join(base_dir, 'Output Files')
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     suffix = data.get('plot_suffix', '')
-    plt.savefig(os.path.join(save_dir, f'Financials{suffix}.png'), dpi=200, bbox_inches='tight')
+    save_path = os.path.join(output_dir, f'Financials{suffix}.png')
+    print(f"Saving financials plot to: {save_path}")  # Debug print
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close()

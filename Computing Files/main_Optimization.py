@@ -55,9 +55,10 @@ P_grid_export_vals = np.zeros(n_steps)
 # Define forecast padding helper
 def pad_to_horizon(arr, horizon, pad_value=None):
     if len(arr) < horizon:
-        if pad_value is None:
-            pad_value = np.mean(arr) if len(arr) > 0 else 0
-        return np.pad(arr, (0, horizon - len(arr)), mode='constant', constant_values=pad_value)
+        if len(arr) > 0:
+            return np.pad(arr, (0, horizon - len(arr)), mode='edge')
+        else:
+            return np.zeros(horizon)
     return arr[:horizon]
 
 # MPC loop

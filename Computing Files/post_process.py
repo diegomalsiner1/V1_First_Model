@@ -37,6 +37,13 @@ def compute_revenues(results, data):
     pv_to_consumer_rev = results['P_PV_consumer_vals'] * data['lcoe_pv'] * data['delta_t']
     pv_to_ev_rev = results['P_PV_ev_vals'] * data['lcoe_pv'] * data['delta_t']
 
+    # Calculate additional revenue streams for plotting
+    pv_to_grid_rev = results['P_PV_grid_vals'] * data['grid_sell_price'] * data['delta_t']
+    pv_to_bess_cost = results['P_PV_consumer_vals'] * data['lcoe_pv'] * data['delta_t']  # If you have a cost for storing PV in BESS, adjust this
+    bess_to_consumer_rev = results['P_BESS_consumer_vals'] * data['lcoe_bess'] * data['delta_t']
+    bess_to_grid_rev = results['P_BESS_grid_vals'] * data['grid_sell_price'] * data['delta_t']
+    total_net_per_step = grid_sell_revenue - grid_buy_cost  # Net revenue per step
+
     total_revenue = np.sum(grid_sell_revenue - grid_buy_cost)
 
     revenues = {
@@ -44,6 +51,11 @@ def compute_revenues(results, data):
         'grid_buy_cost': grid_buy_cost,
         'pv_to_consumer_rev': pv_to_consumer_rev,
         'pv_to_ev_rev': pv_to_ev_rev,
+        'pv_to_grid_rev': pv_to_grid_rev,
+        'pv_to_bess_cost': pv_to_bess_cost,
+        'bess_to_consumer_rev': bess_to_consumer_rev,
+        'bess_to_grid_rev': bess_to_grid_rev,
+        'total_net_per_step': total_net_per_step,
         'total_revenue': total_revenue
     }
     

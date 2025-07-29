@@ -47,9 +47,13 @@ class MPC:
         n.add("Bus", "AC", carrier='AC')
         n.add("Bus", "DC", carrier='DC')
         n.add("Bus", "Grid", carrier='AC')
+        n.add("Bus", "Grid_Sink", carrier='AC')  # Dummy sink bus for grid
 
         # DC/AC converter (bidirectional) with carrier
         n.add("Link", "DC_AC_Converter", bus0="DC", bus1="AC", p_nom=1e6, p_min_pu=-1, efficiency=0.98, efficiency2=0.98, marginal_cost=0, carrier='DC')
+
+        # Add dummy link to absorb excess grid export
+        n.add("Link", "Grid_Dump", bus0="Grid", bus1="Grid_Sink", p_nom=1e9, efficiency=0, marginal_cost=0, carrier='AC')
 
         # PV generator (DC bus)
         pv_nom = max(pv_forecast)
@@ -98,11 +102,12 @@ class MPC:
         # Create model
         n.optimize.create_model()
 
+        #PyPSA Handels SOC bounds of Storage systems internally (later set lower bound)
         # Add SOC constraints (if BESS exists)
-        if "BESS" in n.storage_units.index:
-            soc_var = n.model["StorageUnit-state_of_charge"]
-            n.model.add_constraints(soc_var >= min_soc, name="SOC_min")
-            n.model.add_constraints(soc_var <= max_soc, name="SOC_max")
+        #if "BESS" in n.storage_units.index:
+        #    soc_var = n.model["StorageUnit-state_of_charge"]
+        #    n.model.add_constraints(soc_var >= min_soc, name="SOC_min")
+        #    n.model.add_constraints(soc_var <= max_soc, name="SOC_max")
 
         
         # Run optimization
@@ -123,8 +128,8 @@ class MPC:
             link_dc_to_ac = 0
             grid_import = 0
             grid_export = 0
-            consumer_load = 0
-            ev_load = 0
+            consumer_load = demand_forecast[0]
+            ev_load = ev_forecast[0]
         else:
             # Defensive extraction for PV
             if "PV" in n.generators_t.p.columns:
@@ -135,7 +140,7 @@ class MPC:
             # Defensive extraction for BESS
             if "BESS" in n.storage_units_t.p.columns:
                 bess_dispatch = n.storage_units_t.p["BESS"].values[0]
-                soc_next = n.storage_units_t.state_of_charge["BESS"].values[1] * self.bess_capacity if len(n.storage_units_t.state_of_charge["BESS"]) > 1 else soc
+                soc_next = n.storage_units_t.state_of_charge["BESS"].values[0] #if len(n.storage_units_t.state_of_charge["BESS"]) > 1 else soc
             else:
                 bess_dispatch = 0
                 soc_next = soc

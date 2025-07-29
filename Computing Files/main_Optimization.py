@@ -1,5 +1,6 @@
 from mpc import MPC
 from load_data import load_constants
+import load_data
 import numpy as np
 import post_process
 import plots
@@ -34,7 +35,7 @@ assert len(data['grid_buy_price']) == data['n_steps']
 assert len(data['grid_sell_price']) == data['n_steps']
 
 # MPC Parameters
-horizon = 30  # 6 hours = 30 x 15-min steps
+horizon = 24  # 6 hours = 30 x 15-min steps
 mpc_controller = MPC()
 
 # Initialize arrays including EV-related variables

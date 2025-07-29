@@ -54,7 +54,7 @@ class MPC:
         pv_max = np.max(pv_forecast)
         if pv_max == 0:
             pv_max = 1  # Prevent division by zero
-        n.add("Generator", "PV", bus="DC", p_nom=pv_nom, p_max_pu=pv_forecast/pv_max, marginal_cost=0)
+        n.add("Generator", "PV", bus="DC", p_nom=pv_nom, p_max_pu=pv_forecast/pv_max, marginal_cost=lcoe_pv)
 
         # BESS (DC bus)
         print(f"BESS params: p_nom={self.bess_power_limit}, capacity={self.bess_capacity}")
@@ -78,9 +78,9 @@ class MPC:
         # Infinite generator at Grid bus (reference, cost 0)
         n.add("Generator", "Grid_Source", bus="Grid", p_nom=1e6, marginal_cost=0)
 
-        # Assign time-varying marginal costs
-        n.links_t.marginal_cost["Grid_Import"] = buy_forecast
-        n.links_t.marginal_cost["Grid_Export"] = -sell_forecast
+        # Assign time-varying marginal costs as Series with snapshots index
+        n.links_t.marginal_cost["Grid_Import"] = pd.Series(buy_forecast, index=n.snapshots)
+        n.links_t.marginal_cost["Grid_Export"] = pd.Series(-sell_forecast, index=n.snapshots)
 
         # Loads (AC bus)
         n.add("Load", "Consumer", bus="AC", p_set=0)
@@ -127,7 +127,7 @@ class MPC:
             # Defensive extraction for BESS
             if "BESS" in n.storage_units_t.p.columns:
                 bess_dispatch = n.storage_units_t.p["BESS"].values[0]
-                soc_next = n.storage_units_t.state_of_charge["BESS"].values[1] * self.bess_capacity if len(n.storage_units_t.state_of_charge["BESS"]) > 1 else soc
+                soc_next = n.storage_units_t.state_of_charge["BESS"].values[1]  # Absolute kWh, remove * capacity
             else:
                 bess_dispatch = 0
                 soc_next = soc

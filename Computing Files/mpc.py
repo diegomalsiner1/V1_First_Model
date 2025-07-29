@@ -44,8 +44,8 @@ class MPC:
         n.add("Bus", "DC")
         n.add("Bus", "Grid")
 
-        # Add DC/AC converter (trafo) with zero marginal cost
-        n.add("Link", "DC_AC_Converter", bus0="DC", bus1="AC", p_nom=self.bess_power_limit*2, efficiency=0.98, marginal_cost=0)
+        # Add DC/AC converter (trafo) with zero marginal cost and very large power limit
+        n.add("Link", "DC_AC_Converter", bus0="DC", bus1="AC", p_nom=1e6, efficiency=0.98, marginal_cost=0)
 
         # Add PV generator (DC bus) with zero marginal cost
         n.add("Generator", "PV", bus="DC", p_nom=max(pv_forecast), p_max_pu=pv_forecast/np.max(pv_forecast), marginal_cost=0)

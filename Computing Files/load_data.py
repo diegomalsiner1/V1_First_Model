@@ -7,12 +7,22 @@ import pv_consumer_data_2024 as pv_data
 import ev_power_profile
 from datetime import datetime, timedelta
 
-def load_constants():
-    """Load plant constants from CSV file."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
-    constants_data = pd.read_csv(csv_path, comment='#')
-    return constants_data
+def load_constants(constants_path=None):
+    if constants_path is None:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        constants_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
+    constants_data = pd.read_csv(constants_path, comment='#', header=None, names=['Parameter', 'Value'])
+    params = {}
+    for key in ['BESS_Capacity', 'BESS_Power_Limit', 'BESS_Efficiency_Charge', 'BESS_Efficiency_Discharge', 'SOC_Initial', 'BESS_limit']:
+        params[key] = float(constants_data[constants_data['Parameter'] == key]['Value'].iloc[0])
+    return params
+
+#def load_constants():
+#    """Load plant constants from CSV file."""
+#    script_dir = os.path.dirname(os.path.abspath(__file__))
+#    csv_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
+#    constants_data = pd.read_csv(csv_path, comment='#')
+#    return constants_data
 
 def build_time_vector(start_dt, end_dt, delta_t):
     """Build time_steps, n_steps, and time_indices based on start/end and delta_t."""

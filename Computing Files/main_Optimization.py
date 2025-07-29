@@ -1,9 +1,9 @@
-import load_data
+from mpc import MPC
+from load_data import load_constants
+import numpy as np
 import post_process
 import plots
-import mpc
 import sys
-import numpy as np
 import os
 
 print(sys.executable)
@@ -35,29 +35,21 @@ assert len(data['grid_sell_price']) == data['n_steps']
 
 # MPC Parameters
 horizon = 30  # 6 hours = 30 x 15-min steps
-mpc_controller = mpc.MPC()
+mpc_controller = MPC()
 
 # Initialize arrays including EV-related variables
-soc_actual = np.zeros(data['n_steps'] + 1)
+n_steps = data['n_steps']
+soc_actual = np.zeros(n_steps + 1)
 soc_actual[0] = data['soc_initial']
-P_BESS_vals = np.zeros(data['n_steps'])
-P_BESS_discharge_vals = np.zeros(data['n_steps'])
-P_BESS_charge_vals = np.zeros(data['n_steps'])
-P_PV_gen_vals = np.zeros(data['n_steps'])
-P_link_dc_to_ac_vals = np.zeros(data['n_steps'])
-P_grid_import_vals = np.zeros(data['n_steps'])
-P_grid_export_vals = np.zeros(data['n_steps'])
-P_grid_consumer_vals = np.zeros(data['n_steps'])
-P_grid_ev_vals = np.zeros(data['n_steps'])
-# Old-style arrays for fallback and post-processing
-P_PV_consumer_vals = np.zeros(data['n_steps'])
-P_PV_ev_vals = np.zeros(data['n_steps'])
-P_PV_BESS_vals = np.zeros(data['n_steps'])
-P_PV_grid_vals = np.zeros(data['n_steps'])
-P_BESS_consumer_vals = np.zeros(data['n_steps'])
-P_BESS_ev_vals = np.zeros(data['n_steps'])
-P_BESS_grid_vals = np.zeros(data['n_steps'])
-P_grid_BESS_vals = np.zeros(data['n_steps'])
+P_PV_consumer_vals = np.zeros(n_steps)
+P_PV_ev_vals = np.zeros(n_steps)
+P_PV_grid_vals = np.zeros(n_steps)
+P_BESS_discharge_vals = np.zeros(n_steps)
+P_BESS_charge_vals = np.zeros(n_steps)
+P_grid_consumer_vals = np.zeros(n_steps)
+P_grid_ev_vals = np.zeros(n_steps)
+P_grid_import_vals = np.zeros(n_steps)
+P_grid_export_vals = np.zeros(n_steps)
 
 # Define forecast padding helper
 def pad_to_horizon(arr, horizon, pad_value=None):
@@ -68,7 +60,7 @@ def pad_to_horizon(arr, horizon, pad_value=None):
     return arr[:horizon]
 
 # MPC loop
-for t in range(data['n_steps']):
+for t in range(n_steps):
     pv_forecast = pad_to_horizon(data['pv_power'][t:t + horizon], horizon)
     demand_forecast = pad_to_horizon(data['consumer_demand'][t:t + horizon], horizon)
     ev_forecast = pad_to_horizon(data['ev_demand'][t:t + horizon], horizon)
@@ -80,63 +72,29 @@ for t in range(data['n_steps']):
         buy_forecast, sell_forecast, data['lcoe_pv'], data['pi_ev'], horizon
     )
 
-    if control is None:
-        print(f"MPC infeasible at t={t}; using fallback (no BESS action).")
-        pv_t = data['pv_power'][t]
-        demand_t = data['consumer_demand'][t]
-        ev_t = data['ev_demand'][t]
+    P_PV_consumer_vals[t] = control['pv_bess_to_consumer']
+    P_PV_ev_vals[t] = control['pv_bess_to_ev']
+    P_PV_grid_vals[t] = control['pv_bess_to_grid']
+    P_BESS_discharge_vals[t] = control['P_BESS_discharge']
+    P_BESS_charge_vals[t] = control['P_BESS_charge']
+    P_grid_consumer_vals[t] = control['grid_to_consumer']
+    P_grid_ev_vals[t] = control['grid_to_ev']
+    P_grid_import_vals[t] = control['P_grid_import']
+    P_grid_export_vals[t] = control['P_grid_export']
+    soc_actual[t + 1] = control['SOC_next']
 
-        # Simple fallback strategy
-        P_PV_consumer_vals[t] = min(pv_t, demand_t)
-        P_PV_ev_vals[t] = min(max(0, pv_t - P_PV_consumer_vals[t]), ev_t)
-        P_PV_grid_vals[t] = max(0, pv_t - P_PV_consumer_vals[t] - P_PV_ev_vals[t])
-        P_BESS_consumer_vals[t] = 0
-        P_BESS_ev_vals[t] = 0
-        P_BESS_grid_vals[t] = 0
-        P_grid_consumer_vals[t] = max(0, demand_t - P_PV_consumer_vals[t])
-        P_grid_ev_vals[t] = max(0, ev_t - P_PV_ev_vals[t])
-        P_grid_BESS_vals[t] = 0
-        soc_actual[t + 1] = soc_actual[t]
-    else:
-        P_BESS_vals[t] = control['P_BESS']
-        P_BESS_discharge_vals[t] = control['P_BESS_discharge']
-        P_BESS_charge_vals[t] = control['P_BESS_charge']
-        P_PV_gen_vals[t] = control['P_PV_gen']
-        P_link_dc_to_ac_vals[t] = control['P_link_dc_to_ac']
-        P_grid_import_vals[t] = control['P_grid_import']
-        P_grid_export_vals[t] = control['P_grid_export']
-        # Use new keys for physical flows
-        P_PV_consumer_vals[t] = control['pv_bess_to_consumer']
-        P_PV_ev_vals[t] = control['pv_bess_to_ev']
-        P_PV_grid_vals[t] = control['pv_bess_to_grid']
-        P_grid_consumer_vals[t] = control['grid_to_consumer']
-        P_grid_ev_vals[t] = control['grid_to_ev']
-        soc_actual[t + 1] = control['SOC_next']
-
-# After MPC computation, map new flows to old-style arrays for post-processing
-P_BESS_grid_vals = P_BESS_discharge_vals
-P_BESS_consumer_vals = np.zeros(data['n_steps'])
-P_BESS_ev_vals = np.zeros(data['n_steps'])
-
-# Compile results
-slack_vals = np.zeros(data['n_steps'])
+# Compile results for post-processing
 results = {
-    'slack_vals': slack_vals,
     'P_PV_consumer_vals': P_PV_consumer_vals,
     'P_PV_ev_vals': P_PV_ev_vals,
-    'P_PV_BESS_vals': P_PV_BESS_vals,
     'P_PV_grid_vals': P_PV_grid_vals,
-    'P_BESS_consumer_vals': P_BESS_consumer_vals,
-    'P_BESS_ev_vals': P_BESS_ev_vals,
-    'P_BESS_grid_vals': P_BESS_grid_vals,
+    'P_BESS_discharge': P_BESS_discharge_vals,
+    'P_BESS_charge': P_BESS_charge_vals,
     'P_grid_consumer_vals': P_grid_consumer_vals,
     'P_grid_ev_vals': P_grid_ev_vals,
-    'P_grid_BESS_vals': P_grid_BESS_vals,
-    'SOC_vals': soc_actual,
-    'P_BESS_charge': P_BESS_charge_vals,
-    'P_BESS_discharge': P_BESS_discharge_vals,
-    'P_grid_sold': P_grid_export_vals,
-    'P_grid_bought': P_grid_import_vals
+    'P_grid_import_vals': P_grid_import_vals,
+    'P_grid_export_vals': P_grid_export_vals,
+    'SOC_vals': soc_actual
 }
 revenues = post_process.compute_revenues(results, data)
 post_process.print_results(revenues, results, data)

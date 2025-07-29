@@ -37,13 +37,17 @@ class MPC:
         n = pypsa.Network()
         n.set_snapshots(snapshots)
 
-        # Add buses
-        n.add("Bus", "AC")
-        n.add("Bus", "DC")
-        n.add("Bus", "Grid")
+        n.snapshot_weightings.objective = self.delta_t
+        n.snapshot_weightings.generators = self.delta_t
+        n.snapshot_weightings.stores = self.delta_t
 
-        # DC/AC converter (trafo)
-        n.add("Link", "DC_AC_Converter", bus0="DC", bus1="AC", p_nom=1e6, efficiency=0.98, marginal_cost=0)
+        # Add buses with carriers
+        n.add("Bus", "AC", carrier='AC')
+        n.add("Bus", "DC", carrier='DC')
+        n.add("Bus", "Grid", carrier='AC')
+
+        # DC/AC converter (bidirectional) with carrier
+        n.add("Link", "DC_AC_Converter", bus0="DC", bus1="AC", p_nom=1e6, p_min_pu=-1, efficiency=0.98, efficiency2=0.98, marginal_cost=0, carrier='DC')
 
         # PV generator (DC bus)
         pv_nom = max(pv_forecast)
@@ -61,17 +65,22 @@ class MPC:
                   efficiency_store=self.eta_charge,
                   efficiency_dispatch=self.eta_discharge,
                   marginal_cost=0,
-                  state_of_charge_initial=soc,
-                  state_of_charge_min=self.bess_percent_limit * self.bess_capacity,
-                  state_of_charge_max=self.bess_capacity)
+                  state_of_charge_initial=soc)
 
-        # Grid import/export as Links (no artificial limits, p_nom=1e6)
-        n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=1e6, efficiency=1.0, marginal_cost=pd.Series(buy_forecast, index=snapshots))
-        n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=1e6, efficiency=1.0, marginal_cost=-pd.Series(sell_forecast, index=snapshots))
+        # Define SOC bounds early
+        min_soc = self.bess_percent_limit * self.bess_capacity
+        max_soc = self.bess_capacity
 
-        # Infinite generator at Grid bus (reference, marginal_cost=buy_forecast)
-        # This ensures grid can always supply at market price
-        n.add("Generator", "Grid_Source", bus="Grid", p_nom=1e6, marginal_cost=pd.Series(buy_forecast, index=snapshots))
+        # Grid import/export as Links with carriers
+        n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=1e6, efficiency=1.0, marginal_cost=0, carrier='AC')
+        n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=1e6, efficiency=1.0, marginal_cost=0, carrier='AC')
+
+        # Infinite generator at Grid bus (reference, cost 0)
+        n.add("Generator", "Grid_Source", bus="Grid", p_nom=1e6, marginal_cost=0)
+
+        # Assign time-varying marginal costs
+        n.links_t.marginal_cost["Grid_Import"] = buy_forecast
+        n.links_t.marginal_cost["Grid_Export"] = -sell_forecast
 
         # Loads (AC bus)
         n.add("Load", "Consumer", bus="AC", p_set=0)
@@ -79,75 +88,77 @@ class MPC:
         n.loads_t.p_set.loc[:, "Consumer"] = demand_forecast
         n.loads_t.p_set.loc[:, "EV"] = ev_forecast
 
-        # Run optimization
+        # Create model
         n.optimize.create_model()
-        n.optimize.solve_model(solver_name="gurobi")
+
+        # Add SOC constraints (if BESS exists)
+        if "BESS" in n.storage_units.index:
+            soc_var = n.model["StorageUnit-state_of_charge"]
+            n.model.add_constraints(soc_var >= min_soc, name="SOC_min")
+            n.model.add_constraints(soc_var <= max_soc, name="SOC_max")
+
+        # Run optimization
+        n.optimize.solve_model(solver_name="gurobi", solver_options={"DualReductions": 0})
 
         # Fail-safe: check if solved
         if not n.is_solved:
             print("Optimization failed: infeasible or unbounded.")
-            return {
-                'P_BESS': 0,
-                'SOC_next': soc,
-                'P_BESS_discharge': 0,
-                'P_BESS_charge': 0,
-                'P_PV_gen': 0,
-                'P_link_dc_to_ac': 0,
-                'P_grid_import': 0,
-                'P_grid_export': 0,
-                'pv_bess_to_consumer': 0,
-                'pv_bess_to_ev': 0,
-                'pv_bess_to_grid': 0,
-                'grid_to_consumer': 0,
-                'grid_to_ev': 0,
-                'ev_renewable_share': 0,
-                'ev_revenue': 0,
-                'bess_capacity': self.bess_capacity,
-                'bess_power_limit': self.bess_power_limit,
-                'bess_efficiency_charge': self.eta_charge,
-                'bess_efficiency_discharge': self.eta_discharge,
-                'soc_initial': self.soc_initial,
-                'bess_percent_limit': self.bess_percent_limit,
-                'slack': 0.0
-            }
-
-        # Defensive extraction for PV
-        if "PV" in n.generators_t.p.columns:
-            pv_gen = n.generators_t.p["PV"].values[0]
-        else:
-            pv_gen = 0
-
-        # Defensive extraction for BESS
-        if "BESS" in n.storage_units_t.p.columns:
-            bess_dispatch = n.storage_units_t.p["BESS"].values[0]
-            soc_next = n.storage_units_t.state_of_charge["BESS"].values[1] * self.bess_capacity if len(n.storage_units_t.state_of_charge["BESS"]) > 1 else soc
-        else:
+            # Compute IIS for debug
+            n.model.solver_model.computeIIS()
+            n.model.solver_model.write("iis.ilp")  # Inspect this file for conflicting constraints
+            print("IIS written to iis.ilp - open it to see conflicting constraints (e.g., SOC bounds vs balance).")
+            
+            # Define variables for failed case
             bess_dispatch = 0
             soc_next = soc
-
-        # Defensive extraction for links
-        if "DC_AC_Converter" in n.links_t.p0.columns:
-            link_dc_to_ac = n.links_t.p0["DC_AC_Converter"].values[0]
-        else:
+            pv_gen = 0
             link_dc_to_ac = 0
-        if "Grid_Import" in n.links_t.p0.columns:
-            grid_import = n.links_t.p0["Grid_Import"].values[0]
-        else:
             grid_import = 0
-        if "Grid_Export" in n.links_t.p0.columns:
-            grid_export = n.links_t.p0["Grid_Export"].values[0]
-        else:
             grid_export = 0
-
-        # Defensive extraction for loads
-        if "Consumer" in n.loads_t.p.columns:
-            consumer_load = n.loads_t.p["Consumer"].values[0]
-        else:
             consumer_load = 0
-        if "EV" in n.loads_t.p.columns:
-            ev_load = n.loads_t.p["EV"].values[0]
-        else:
             ev_load = 0
+        else:
+            # Defensive extraction for PV
+            if "PV" in n.generators_t.p.columns:
+                pv_gen = n.generators_t.p["PV"].values[0]
+            else:
+                pv_gen = 0
+
+            # Defensive extraction for BESS
+            if "BESS" in n.storage_units_t.p.columns:
+                bess_dispatch = n.storage_units_t.p["BESS"].values[0]
+                soc_next = n.storage_units_t.state_of_charge["BESS"].values[1] * self.bess_capacity if len(n.storage_units_t.state_of_charge["BESS"]) > 1 else soc
+            else:
+                bess_dispatch = 0
+                soc_next = soc
+
+            # Defensive extraction for links
+            if "DC_AC_Converter" in n.links_t.p0.columns:
+                link_dc_to_ac = n.links_t.p0["DC_AC_Converter"].values[0]
+            else:
+                link_dc_to_ac = 0
+            if "Grid_Import" in n.links_t.p0.columns:
+                grid_import = n.links_t.p0["Grid_Import"].values[0]
+            else:
+                grid_import = 0
+            if "Grid_Export" in n.links_t.p0.columns:
+                grid_export = n.links_t.p0["Grid_Export"].values[0]
+            else:
+                grid_export = 0
+
+            # Defensive extraction for loads
+            if "Consumer" in n.loads_t.p.columns:
+                consumer_load = n.loads_t.p["Consumer"].values[0]
+            else:
+                consumer_load = 0
+            if "EV" in n.loads_t.p.columns:
+                ev_load = n.loads_t.p["EV"].values[0]
+            else:
+                ev_load = 0
+
+        # Add balance debug
+        dc_balance = pv_gen + bess_dispatch - link_dc_to_ac  # Approx, adjust for eff
+        print(f"DC balance check: {dc_balance:.2f} (should ~0)")
 
         # Map DC to AC flow to demand and grid export
         dc_to_ac_available = max(link_dc_to_ac, 0)

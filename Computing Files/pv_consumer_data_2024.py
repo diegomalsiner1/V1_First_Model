@@ -35,14 +35,14 @@ def compute_pv_power(start_time, end_time):
         df_15min['GridFeedIn']
     )
 
-    # Ensure slicing returns exactly 672 steps (7 days x 24h x 4)
-    df_week = df_15min.loc[start_time:end_time - pd.Timedelta(minutes=15)]
+    # Slice for exactly 1 day (24h x 4 = 96 steps)
+    df_day = df_15min.loc[start_time:end_time - pd.Timedelta(minutes=15)]
 
-    if len(df_week) != 672:
-        raise ValueError(f"Data slice from {start_time} to {end_time} has {len(df_week)} entries, expected 672.")
+    if len(df_day) != 96:
+        raise ValueError(f"Data slice from {start_time} to {end_time} has {len(df_day)} entries, expected 96.")
 
-    pv_production = df_week['InverterYield'].values
-    consumer_demand = df_week['consumer_demand'].values
+    pv_production = df_day['InverterYield'].values
+    consumer_demand = df_day['consumer_demand'].values
 
     return {
         'pv_production': pv_production,

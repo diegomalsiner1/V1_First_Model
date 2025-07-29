@@ -54,8 +54,9 @@ def load(reference_case=False, use_api=True):
     start_dt = pd.to_datetime(period_start_str, format='%Y%m%d%H%M')
     end_dt = pd.to_datetime(period_end_str, format='%Y%m%d%H%M')
     delta_t = 0.25
-    if (end_dt - start_dt) != timedelta(days=7):
-        raise ValueError("PERIOD_START to PERIOD_END must span exactly 7 days.")
+    # Comment out the 7-day check for flexibility
+    # if (end_dt - start_dt) != timedelta(days=7):
+    #     raise ValueError("PERIOD_START to PERIOD_END must span exactly 7 days.")
     time_steps, n_steps, time_indices = build_time_vector(start_dt, end_dt, delta_t)
     timezone_offset = int(constants_data.get('TIMEZONE_OFFSET', 0))
     bess_capacity = float(constants_data['BESS_Capacity'])

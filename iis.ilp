@@ -1,0 +1,15 @@
+\ Model obj_copy
+\ LP format - for model browsing. Use MPS format to capture full model detail.
+\ Signature: 0xd77d2c5820a23bce
+Minimize
+ 
+Subject To
+ c264: x120 <= 1000
+ c288: x144 >= 0
+ c360: x168 <= 4472
+ c456: - 0.25406504065 x120 + 0.246 x144 - x168 = -9.8854263039699998e+06
+Bounds
+ x120 free
+ x144 free
+ x168 free
+End

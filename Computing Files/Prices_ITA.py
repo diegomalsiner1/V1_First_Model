@@ -15,6 +15,13 @@ def get_month_from_constants():
 def fetch_prices_from_csv():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     price_file = os.path.join(base_dir, 'Input Data Files', 'Price_Matrix.csv')
+    constants_file = os.path.join(base_dir, 'Input Data Files', 'Constants_Plant.csv')
+    constants = pd.read_csv(constants_file, comment='#')
+    period_start = constants[constants['Parameter'] == 'PERIOD_START']['Value'].iloc[0]
+    period_end = constants[constants['Parameter'] == 'PERIOD_END']['Value'].iloc[0]
+    start_dt = datetime.strptime(str(period_start), "%Y%m%d%H%M")
+    end_dt = datetime.strptime(str(period_end), "%Y%m%d%H%M")
+    days = (end_dt - start_dt).days
     month = get_month_from_constants()
     # Read raw file
     df = pd.read_csv(price_file, sep=',', encoding='utf-8')
@@ -36,18 +43,18 @@ def fetch_prices_from_csv():
     hourly_prices = hourly_prices.values
     if len(hourly_prices) != 24:
         raise ValueError(f"Expected 24 hourly prices for month, got {len(hourly_prices)}")
-    # Repeat for 7 days (168 values)
-    hourly_prices_7d = np.tile(hourly_prices, 7)
-    # Expand to 15-min intervals (672 values)
-    prices_15min = np.repeat(hourly_prices_7d, 4)
-    # For compatibility with API_prices, return hourly prices as pd.Series (length 168)
-    buy_prices = pd.Series(hourly_prices_7d)
+    # Repeat for number of days (1 day for testing)
+    hourly_prices_period = np.tile(hourly_prices, days)
+    # Expand to 15-min intervals (96 values for 1 day)
+    prices_15min = np.repeat(hourly_prices_period, 4)
+    # For compatibility with API_prices, return hourly prices as pd.Series (length 24 for 1 day)
+    buy_prices = pd.Series(hourly_prices_period)
     # Sell price: subtract margin (e.g., 0.005) and ensure non-negative
     sell_prices = pd.Series(np.maximum(buy_prices - 0.005, 0))
     return buy_prices, sell_prices
 
 if __name__ == "__main__":
     buy, sell = fetch_prices_from_csv()
-    print("Buy prices (hourly, 7 days):", buy.values)
-    print("Sell prices (hourly, 7 days):", sell.values)
+    print("Buy prices (hourly, 1 day):", buy.values)
+    print("Sell prices (hourly, 1 day):", sell.values)
     print(f"\nTotal hourly prices: {len(buy)}")

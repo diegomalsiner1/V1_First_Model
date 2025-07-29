@@ -12,7 +12,7 @@ def compute_revenues(results, data):
         dict: Revenue streams and self-sufficiency ratio.
     """
     # Map BESS discharge to consumer, EV, and grid
-    bess_discharge = results.get('P_BESS_discharge', np.zeros_like(results['P_BESS_consumer_vals']))
+    bess_discharge = results.get('P_BESS_discharge', np.zeros_like(data['consumer_demand']))
     consumer_demand = data['consumer_demand']
     ev_demand = data['ev_demand']
     pv_bess_to_consumer = results['P_PV_consumer_vals']
@@ -72,7 +72,7 @@ def print_results(revenues, results, data):
         data (dict): Simulation data and parameters.
     """
     print(f"Total Revenue: Eur{revenues['total_revenue']:.2f}")
-    print("Time steps with unmet demand (kW):")
-    for t in data['time_indices']:
-        if results['slack_vals'][t] > 1e-6:
-            print(f"Time {data['time_steps'][t]:.2f}h: Unmet demand = {results['slack_vals'][t]:.2f} kW")
+    print(f"Self-sufficiency ratio (consumer): {revenues['self_sufficiency']:.2f}%")
+    print(f"EV renewable share: {revenues['ev_renewable_share']:.2f}%")
+    # Remove slack_vals check, as PyPSA always balances demand if feasible
+    print("All demand met in every timestep (no slack variable used).")

@@ -8,9 +8,13 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     """
     plt.figure(figsize=(14, 12))
     
-    # Common x-axis setup for 1 day
-    x_ticks = np.arange(0, 24, 6)  # Hourly ticks for 1 day (0-24h)
-    x_labels = [f"{h}:00" for h in x_ticks]  # Use hour labels for clarity
+    # Common x-axis setup for 7 days (15-min intervals)
+    n_steps = len(data['time_steps'])
+    x_ticks = np.arange(0, n_steps+1, 96)  # Every 96 steps = 1 day
+    if 'day_labels' in data and len(data['day_labels']) == 7:
+        x_labels = data['day_labels'] + [data['day_labels'][-1] + ' End']  # 8 labels for 8 ticks
+    else:
+        x_labels = [str(d) for d in range(len(x_ticks))]  # Default to step numbers if no labels
     
     # Subplot 1: PV and Grid Flows
     plt.subplot(3, 1, 1)
@@ -23,8 +27,8 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(x_ticks, x_labels)
-    for d in range(1, 1):  # No dividers for single day
-        plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
+    for d in range(1, len(x_labels)):
+        plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
 
     # Subplot 2: BESS Flows and SOC (absolute units)
     plt.subplot(3, 1, 2)
@@ -38,10 +42,10 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     ax1.grid(True, linestyle=':', linewidth=0.7)
     ax1.set_xticks(x_ticks)
     ax1.set_xticklabels(x_labels)
-    for d in range(1, 1):  # No dividers for single day
-        ax1.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
+    for d in range(1, len(x_labels)):
+        ax1.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
     ax2 = ax1.twinx()
-    ax2.plot(data['time_steps'], results.get('SOC_vals', np.zeros_like(data['pv_power']))[:-1], label='SOC (kWh)', color='green', linestyle='--', linewidth=1)
+    ax2.plot(data['time_steps'], results.get('SOC_vals', np.zeros(n_steps + 1))[:n_steps], label='SOC (kWh)', color='green', linestyle='--', linewidth=1)
     ax2.set_ylabel('SOC (kWh)')
     ax2.legend(loc='upper right', fontsize=9)
 
@@ -67,8 +71,8 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(x_ticks, x_labels)
-    for d in range(1, 1):  # No dividers for single day
-        plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
+    for d in range(1, len(x_labels)):
+        plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
 
     plt.subplots_adjust(hspace=0.35, top=0.95, bottom=0.06, left=0.07, right=0.97)
     plt.tight_layout(pad=1.5)
@@ -87,6 +91,12 @@ def plot_financials(revenues, data, save_dir=None):
     Plot financial results: prices, revenue streams, and cumulative revenue.
     """
     plt.figure(figsize=(14, 12))
+    n_steps = len(data['time_steps'])
+    x_ticks = np.arange(0, n_steps+1, 96)
+    if 'day_labels' in data and len(data['day_labels']) == 7:
+        x_labels = data['day_labels'] + [data['day_labels'][-1] + ' End']
+    else:
+        x_labels = [str(d) for d in range(len(x_ticks))]
     # Subplot 1: Market Prices
     plt.subplot(3, 1, 1)
     plt.plot(data['time_steps'], data['grid_buy_price'], label='Grid Buy Price (Euro/kWh)', color='blue', linewidth=1)
@@ -98,30 +108,24 @@ def plot_financials(revenues, data, save_dir=None):
     plt.title(f'Energy Market Price ITA (Matrix)\n{data["period_str"]}')
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
-    plt.xticks(np.arange(0, 24, 6), [f"{h}:00" for h in np.arange(0, 24, 6)])
-    for d in range(1, 1):  # No dividers for single day
-        plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
-
+    plt.xticks(x_ticks, x_labels)
+    for d in range(1, len(x_labels)):
+        plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
     # Subplot 2: Revenue and Cost Streams (use new separated terms)
     plt.subplot(3, 1, 2)
-    #plt.plot(data['time_steps'], revenues.get('pv_to_consumer_rev', np.zeros_like(data['time_steps'])), label='PV to Consumer Revenue (Euro/step)', color='orange', linewidth=1)
     plt.plot(data['time_steps'], revenues.get('pv_to_grid_rev', np.zeros_like(data['time_steps'])), label='PV to Grid Revenue (Euro/step)', color='darkorange', linewidth=1)
-    #plt.plot(data['time_steps'], revenues.get('pv_to_bess_cost', np.zeros_like(data['time_steps'])), label='PV to BESS Cost (Euro/step)', color='gold', linewidth=1)
-    #plt.plot(data['time_steps'], revenues.get('bess_to_consumer_rev', np.zeros_like(data['time_steps'])), label='BESS to Consumer Revenue (Euro/step)', color='green', linewidth=1)
     plt.plot(data['time_steps'], -revenues.get('grid_buy_cost', np.zeros_like(data['time_steps'])), label='Grid Buy Cost (Euro/step)', color='blue', linewidth=1, linestyle='--')
     plt.plot(data['time_steps'], revenues.get('bess_to_grid_rev', np.zeros_like(data['time_steps'])), label='BESS to Grid Revenue (Euro/step)', color='darkgreen', linewidth=1)
     plt.plot(data['time_steps'], revenues.get('pv_to_ev_rev', np.zeros_like(data['time_steps'])), label='PV to EV Revenue (Euro/step)', color='yellow', linewidth=1)
     plt.plot(data['time_steps'], revenues.get('bess_to_ev_rev', np.zeros_like(data['time_steps'])), label='BESS to EV Revenue (Euro/step)', color='lightgreen', linewidth=1)
-    # Add more if needed, e.g., grid_buy_cost as negative
     plt.xlabel('Time (h)')
     plt.ylabel('Euro/step')
     plt.title('Revenue and Cost Streams')
     plt.legend(loc='upper right', fontsize=9, ncol=2)
     plt.grid(True, linestyle=':', linewidth=0.7)
-    plt.xticks(np.arange(0, 24, 6), [f"{h}:00" for h in np.arange(0, 24, 6)])
-    for d in range(1, 1):  # No dividers for single day
-        plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
-
+    plt.xticks(x_ticks, x_labels)
+    for d in range(1, len(x_labels)):
+        plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
     # Subplot 3: Total and Cumulative Revenue
     plt.subplot(3, 1, 3)
     ax1 = plt.gca()
@@ -131,10 +135,10 @@ def plot_financials(revenues, data, save_dir=None):
     ax1.set_title('Total Revenue per Step and Cumulative')
     ax1.legend(loc='upper left', fontsize=9)
     ax1.grid(True, linestyle=':', linewidth=0.7)
-    ax1.set_xticks(np.arange(0, 24, 6))
-    ax1.set_xticklabels([f"{h}:00" for h in np.arange(0, 24, 6)])
-    for d in range(1, 1):  # No dividers for single day
-        ax1.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
+    ax1.set_xticks(x_ticks)
+    ax1.set_xticklabels(x_labels)
+    for d in range(1, len(x_labels)):
+        ax1.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
     ax2 = ax1.twinx()
     cumulative_revenue = np.cumsum(revenues.get('total_net_per_step', np.zeros_like(data['time_steps'])))
     ax2.plot(data['time_steps'], cumulative_revenue, label='Cumulative Total Revenue (Euro)', color='orange', linestyle='--', linewidth=1)
@@ -152,3 +156,4 @@ def plot_financials(revenues, data, save_dir=None):
     print(f"Saving financials plot to: {save_path}")  # Debug print
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close()
+

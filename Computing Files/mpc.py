@@ -43,42 +43,49 @@ class MPC:
         n.snapshot_weightings.generators = self.delta_t
         n.snapshot_weightings.stores = self.delta_t
 
-        # Add buses with carriers
+        # Add buses
         n.add("Bus", "AC", carrier='AC')
-        n.add("Bus", "DC", carrier='DC')
+        n.add("Bus", "PV", carrier='DC')
         n.add("Bus", "Grid", carrier='AC')
-        n.add("Bus", "Grid_Sink", carrier='AC')  # Dummy sink bus for grid
-        n.add("Link", "Grid_Dump", bus0="Grid", bus1="Grid_Sink", p_nom=1e9, efficiency=0, marginal_cost=0, carrier='AC')
+        n.add("Bus", "BESS", carrier='DC')
 
-        # DC/AC converter (bidirectional) with carrier
-        n.add("Link", "DC_AC_Converter", bus0="DC", bus1="AC", p_nom=1e6, p_min_pu=-1, efficiency=0.98, efficiency2=0.98, marginal_cost=0, carrier='DC')
-
-        # PV generator (DC bus)
+        # PV generator (PV bus)
         pv_nom = max(pv_forecast)
         pv_max = np.max(pv_forecast)
         if pv_max == 0:
-            pv_max = 1  # Prevent division by zero
-        n.add("Generator", "PV", bus="DC", p_nom=pv_nom, p_max_pu=pv_forecast/pv_max, marginal_cost=0)
+            pv_max = 1
+        n.add("Generator", "PV", bus="PV", p_nom=pv_nom, p_max_pu=pv_forecast/pv_max, marginal_cost=0)
 
-        # BESS (DC bus)
-        print(f"BESS params: p_nom={self.bess_power_limit}, capacity={self.bess_capacity}")
+        # BESS StorageUnit (BESS bus)
         if self.bess_power_limit > 0 and self.bess_capacity > 0:
-            n.add("StorageUnit", "BESS", bus="DC",
+            n.add("StorageUnit", "BESS", bus="BESS",
                   p_nom=self.bess_power_limit,
                   max_hours=self.bess_capacity/self.bess_power_limit,
-                  efficiency_store=self.eta_charge,
-                  efficiency_dispatch=self.eta_discharge,
+                  efficiency_store=1.0,
+                  efficiency_dispatch=1.0,
                   marginal_cost=0,
                   state_of_charge_initial=soc)
+            # Link for grid charging BESS
+            n.add("Link", "Grid_to_BESS", bus0="Grid", bus1="BESS", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0)
+            n.links_t.marginal_cost["Grid_to_BESS"] = pd.Series(buy_forecast, index=n.snapshots)
+            # Link for PV charging BESS
+            n.add("Link", "PV_to_BESS", bus0="PV", bus1="BESS", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0)
+            # Link for BESS discharge to AC bus
+            n.add("Link", "BESS_to_AC", bus0="BESS", bus1="AC", p_nom=self.bess_power_limit, efficiency=self.eta_discharge, marginal_cost=0)
 
-        # Define SOC bounds early (relax min SOC to allow deeper discharge)
-        min_soc = 0.0  # Allow BESS to discharge fully
-        max_soc = self.bess_capacity
+        # Add uni-directional Links for charging/discharging
+        n.add("Link", "Grid_to_BESS", bus0="Grid", bus1="DC", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0)  # Charge from grid
+        n.links_t.marginal_cost["Grid_to_BESS"] = pd.Series(buy_forecast, index=n.snapshots)  # Pay buy price
 
-        # Grid import/export as Links with carriers (ensure unlimited supply and zero cost)
+        # For discharge, add if not implicit via DC_AC
+        n.add("Link", "BESS_to_AC", bus0="DC", bus1="AC", p_nom=self.bess_power_limit, efficiency=self.eta_discharge, marginal_cost=0)  # Discharge to AC
+
+        # DC/AC converter for PV direct supply to AC bus
+        n.add("Link", "PV_to_AC", bus0="PV", bus1="AC", p_nom=pv_nom, efficiency=0.98, marginal_cost=0)
+
+        # Grid import/export as Links
         max_grid_import = np.max(demand_forecast) + np.max(ev_forecast)
         max_grid_export = np.max(pv_forecast) + self.bess_power_limit
-
         n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=max_grid_import, efficiency=1.0, marginal_cost=0, carrier='AC')
         n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=max_grid_export, efficiency=1.0, marginal_cost=0, carrier='AC')
         n.links_t.marginal_cost["Grid_Export"] = -pd.Series(sell_forecast, index=n.snapshots)
@@ -108,10 +115,12 @@ class MPC:
         #    n.model.add_constraints(soc_var >= min_soc, name="SOC_min")
         #    n.model.add_constraints(soc_var <= max_soc, name="SOC_max")
 
+        try:
+            n.optimize.solve_model(solver_name="highs", solver_options={"parallel": "on"})
+        except Exception as e:
+            print(f"HiGHS failed: {e}. Falling back to Gurobi.")
+            n.optimize.solve_model(solver_name="gurobi", solver_options={"DualReductions": 0})
         
-        # Run optimization
-        n.optimize.solve_model(solver_name="gurobi", solver_options={"DualReductions": 0})
-
         # Fail-safe: check if solved
         if not n.is_solved:
             print("Optimization failed: infeasible or unbounded.")
@@ -139,7 +148,7 @@ class MPC:
             # Defensive extraction for BESS
             if "BESS" in n.storage_units_t.p.columns:
                 bess_dispatch = n.storage_units_t.p["BESS"].values[0]
-                soc_next = n.storage_units_t.state_of_charge["BESS"].values[0] #if len(n.storage_units_t.state_of_charge["BESS"]) > 1 else soc
+                soc_next = n.storage_units_t.state_of_charge["BESS"].values[0]
             else:
                 bess_dispatch = 0
                 soc_next = soc
@@ -157,6 +166,13 @@ class MPC:
                 grid_export = n.links_t.p0["Grid_Export"].values[0]
             else:
                 grid_export = 0
+            
+            grid_to_bess = 0
+            if "Grid_to_BESS" in n.links_t.p0.columns:
+                grid_to_bess = n.links_t.p0["Grid_to_BESS"].values[0]
+            pv_to_bess = 0
+            if "PV_to_BESS" in n.links_t.p0.columns:
+                pv_to_bess = n.links_t.p0["PV_to_BESS"].values[0]
 
             # Defensive extraction for loads
             if "Consumer" in n.loads_t.p.columns:
@@ -169,7 +185,7 @@ class MPC:
                 ev_load = 0
 
         # Add balance debug
-        dc_balance = pv_gen + bess_dispatch - (link_dc_to_ac / self.converter_efficiency)
+        dc_balance = pv_gen + grid_to_bess + pv_to_bess - bess_dispatch - (link_dc_to_ac / self.converter_efficiency)
         print(f"DC balance check: {dc_balance:.2f} (should ~0)")
 
         # Map DC to AC flow to demand and grid export
@@ -188,6 +204,7 @@ class MPC:
             'P_BESS': bess_dispatch,           # kW
             'SOC_next': soc_next,              # kWh
             'P_BESS_discharge': np.maximum(bess_dispatch, 0),  # kW
+            'P_grid_to_bess': grid_to_bess,  # kW
             'P_BESS_charge': np.abs(np.minimum(bess_dispatch, 0)),  # kW
             'P_PV_gen': pv_gen,                # kW
             'P_link_dc_to_ac': link_dc_to_ac,  # kW

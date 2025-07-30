@@ -28,7 +28,10 @@ def compute_revenues(results, data):
     # Grid fills any gaps
     grid_to_cons = np.maximum(remaining_cons - bess_to_cons, 0)
     grid_to_ev = np.maximum(remaining_ev - bess_to_ev, 0)
-    calculated_import = grid_to_cons + grid_to_ev
+    
+    # Read grid-to-BESS charging from results
+    grid_to_bess = results.get('P_Grid_to_BESS', np.zeros_like(pv_gen))
+    calculated_import = grid_to_cons + grid_to_ev + grid_to_bess
     calculated_export = pv_to_grid + bess_to_grid
 
     # Override results for plots (pure PV/BESS separation)
@@ -42,15 +45,16 @@ def compute_revenues(results, data):
     results['P_grid_ev_vals'] = grid_to_ev
     results['P_grid_sold'] = calculated_export  # For top plot
     results['P_grid_bought'] = calculated_import  # Add if needed for purple line
+    results['P_grid_to_bess'] = grid_to_bess
 
     # Revenues (per-step arrays; include self-cons savings and EV rev)
     grid_buy_cost = calculated_import * data['grid_buy_price'] * data['delta_t']
     grid_sell_revenue = calculated_export * data['grid_sell_price'] * data['delta_t']
-    cons_savings = (pv_to_cons + bess_to_cons) * data['pi_consumer'] * data['delta_t']  # Avoided grid buy for consumer
+    #cons_savings = (pv_to_cons + bess_to_cons) * data['pi_consumer'] * data['delta_t']  # Avoided grid buy for consumer
     ev_rev = (pv_to_ev + bess_to_ev) * data['pi_ev'] * data['delta_t']  # Revenue from renewable to EV
-    pv_to_charge_cost = pv_to_charge * data['lcoe_pv'] * data['delta_t']  # Charging cost (if LCOE>0)
+    #pv_to_charge_cost = pv_to_charge * data['lcoe_pv'] * data['delta_t']  # Charging cost (if LCOE>0)
 
-    total_net_per_step = grid_sell_revenue - grid_buy_cost + cons_savings + ev_rev - pv_to_charge_cost
+    total_net_per_step = grid_sell_revenue - grid_buy_cost + ev_rev
 
     revenues = {
         'grid_sell_revenue': grid_sell_revenue,
@@ -61,7 +65,6 @@ def compute_revenues(results, data):
         'bess_to_ev_rev': bess_to_ev * data['pi_ev'] * data['delta_t'],
         'pv_to_grid_rev': pv_to_grid * data['grid_sell_price'] * data['delta_t'],
         'bess_to_grid_rev': bess_to_grid * data['grid_sell_price'] * data['delta_t'],
-        'pv_to_bess_cost': -pv_to_charge_cost,  # As positive cost
         'total_net_per_step': total_net_per_step,
         'total_revenue': np.sum(total_net_per_step)
     }

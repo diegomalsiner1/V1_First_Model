@@ -35,7 +35,7 @@ assert len(data['grid_buy_price']) == data['n_steps']
 assert len(data['grid_sell_price']) == data['n_steps']
 
 # MPC Parameters
-horizon = 24  # 6 hours = 30 x 15-min steps
+horizon = 672  # 24 hours in 15-min steps
 mpc_controller = MPC(delta_t=data['delta_t'])
 
 # Initialize arrays including EV-related variables
@@ -49,6 +49,7 @@ P_BESS_discharge_vals = np.zeros(n_steps)
 P_BESS_charge_vals = np.zeros(n_steps)
 P_grid_consumer_vals = np.zeros(n_steps)
 P_grid_ev_vals = np.zeros(n_steps)
+P_Grid_to_BESS_vals = np.zeros(n_steps)
 P_grid_import_vals = np.zeros(n_steps)
 P_grid_export_vals = np.zeros(n_steps)
 P_PV_gen = np.zeros(n_steps)  # Dedicated array for PV generation
@@ -82,6 +83,7 @@ for t in range(n_steps):
     P_BESS_charge_vals[t] = control['P_BESS_charge']
     P_grid_consumer_vals[t] = control['grid_to_consumer']
     P_grid_ev_vals[t] = control['grid_to_ev']
+    P_Grid_to_BESS_vals[t] = control['P_grid_to_bess']
     P_grid_import_vals[t] = control['P_grid_import']
     P_grid_export_vals[t] = control['P_grid_export']
     soc_actual[t + 1] = control['SOC_next']
@@ -96,6 +98,7 @@ results = {
     'P_BESS_charge': P_BESS_charge_vals,
     'P_grid_consumer_vals': P_grid_consumer_vals,
     'P_grid_ev_vals': P_grid_ev_vals,
+    'P_Grid_to_BESS': P_Grid_to_BESS_vals,
     'P_grid_import_vals': P_grid_import_vals,
     'P_grid_export_vals': P_grid_export_vals,
     'SOC_vals': soc_actual,

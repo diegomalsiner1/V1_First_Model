@@ -41,7 +41,7 @@ def fetch_prices(start_dt, end_dt, use_api=True):
         raise ValueError(f"Expected 168 hourly prices, got {len(grid_buy_price_raw)}.")
     return grid_buy_price_raw, grid_sell_price_raw
 
-def load(reference_case=True, use_api=False):
+def load(reference_case=False, use_api=True):
     """
     Load all input data for the simulation.
     Returns:

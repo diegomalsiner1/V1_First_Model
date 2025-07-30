@@ -26,7 +26,7 @@ def compute_pv_power(start_time, end_time):
 
     # Resample to 15min intervals, forward-fill, and scale energy to 15min chunks
     df_15min = df[cols].resample('15min').ffill()
-    df_15min = df_15min * 0.25  # Convert hourly kWh to 15-min kWh
+    df_15min = df_15min  # Convert hourly kWh to 15-min kWh
 
     # Calculate consumer demand
     df_15min['consumer_demand'] = (
@@ -35,14 +35,15 @@ def compute_pv_power(start_time, end_time):
         df_15min['GridFeedIn']
     )
 
-    # Slice for exactly 1 day (24h x 4 = 96 steps)
-    df_day = df_15min.loc[start_time:end_time - pd.Timedelta(minutes=15)]
+    # Slice for exactly 7 days (7 x 24 x 4 = 672 steps)
+    df_week = df_15min.loc[start_time:end_time - pd.Timedelta(minutes=15)]
 
-    if len(df_day) != 96:
-        raise ValueError(f"Data slice from {start_time} to {end_time} has {len(df_day)} entries, expected 96.")
+    expected_steps = 7 * 24 * 4  # 672 for 7 days of 15-min intervals
+    if len(df_week) != expected_steps:
+        raise ValueError(f"Data slice from {start_time} to {end_time} has {len(df_week)} entries, expected {expected_steps}.")
 
-    pv_production = df_day['InverterYield'].values
-    consumer_demand = df_day['consumer_demand'].values
+    pv_production = df_week['InverterYield'].values
+    consumer_demand = df_week['consumer_demand'].values
 
     return {
         'pv_production': pv_production,

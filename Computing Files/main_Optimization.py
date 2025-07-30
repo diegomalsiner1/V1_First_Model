@@ -40,6 +40,7 @@ mpc_controller = MPC(delta_t=data['delta_t'])
 
 # Initialize arrays including EV-related variables
 n_steps = data['n_steps']
+data['time_steps'] = np.arange(n_steps)
 soc_actual = np.zeros(n_steps + 1)
 soc_actual[0] = data['soc_initial']
 P_PV_consumer_vals = np.zeros(n_steps)

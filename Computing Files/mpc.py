@@ -26,7 +26,7 @@ class MPC:
         self.bess_percent_limit = params['BESS_limit']
         self.converter_efficiency = params.get('CONVERTER_EFFICIENCY', 0.98)
 
-    def predict(self, soc, pv_forecast, demand_forecast, ev_forecast, buy_forecast, sell_forecast, lcoe_pv, pi_ev, horizon):
+    def predict(self, soc, pv_forecast, demand_forecast, ev_forecast, buy_forecast, sell_forecast, lcoe_pv, pi_ev, pi_consumer, horizon):
         # Debug: print input parameters
         print("PV forecast (first 5):", pv_forecast[:5])
         print("BESS power limit:", self.bess_power_limit)
@@ -88,9 +88,9 @@ class MPC:
         n.add("Generator", "Grid_Source", bus="Grid", p_nom=max_grid_import, marginal_cost=0)
         n.generators_t.marginal_cost["Grid_Source"] = pd.Series(buy_forecast, index=n.snapshots)
 
-        # Loads (AC bus) - add marginal benefit only for EV
-        n.add("Load", "Consumer", bus="AC", p_set=0, marginal_cost=0)  # Zero marginal benefit for consumer (owner's demand)
-        n.add("Load", "EV", bus="AC", p_set=0, marginal_cost=-pi_ev)  # Negative cost for EV supply (revenue)
+        # Loads with incentive EV at pi_ev, cons at pi_consumer
+        n.add("Load", "Consumer", bus="AC", p_set=0, marginal_cost=-pi_consumer)
+        n.add("Load", "EV", bus="AC", p_set=0, marginal_cost=-pi_ev)
         n.loads_t.p_set.loc[:, "Consumer"] = demand_forecast
         n.loads_t.p_set.loc[:, "EV"] = ev_forecast
 

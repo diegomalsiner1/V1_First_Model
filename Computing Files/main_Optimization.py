@@ -51,6 +51,7 @@ P_grid_consumer_vals = np.zeros(n_steps)
 P_grid_ev_vals = np.zeros(n_steps)
 P_grid_import_vals = np.zeros(n_steps)
 P_grid_export_vals = np.zeros(n_steps)
+P_PV_gen = np.zeros(n_steps)  # Dedicated array for PV generation
 
 # Define forecast padding helper
 def pad_to_horizon(arr, horizon, pad_value=None):
@@ -71,7 +72,7 @@ for t in range(n_steps):
 
     control = mpc_controller.predict(
         soc_actual[t], pv_forecast, demand_forecast, ev_forecast,
-        buy_forecast, sell_forecast, data['lcoe_pv'], data['pi_ev'], horizon
+        buy_forecast, sell_forecast, data['lcoe_pv'], data['pi_ev'], data['pi_consumer'], horizon
     )
 
     P_PV_consumer_vals[t] = control['pv_bess_to_consumer']
@@ -84,6 +85,7 @@ for t in range(n_steps):
     P_grid_import_vals[t] = control['P_grid_import']
     P_grid_export_vals[t] = control['P_grid_export']
     soc_actual[t + 1] = control['SOC_next']
+    P_PV_gen[t] = control['P_PV_gen']  # Track PV generation
 
 # Compile results for post-processing
 results = {
@@ -96,7 +98,8 @@ results = {
     'P_grid_ev_vals': P_grid_ev_vals,
     'P_grid_import_vals': P_grid_import_vals,
     'P_grid_export_vals': P_grid_export_vals,
-    'SOC_vals': soc_actual
+    'SOC_vals': soc_actual,
+    'P_PV_gen': P_PV_gen
 }
 revenues = post_process.compute_revenues(results, data)
 post_process.print_results(revenues, results, data)

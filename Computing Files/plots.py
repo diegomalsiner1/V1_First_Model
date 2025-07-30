@@ -102,19 +102,21 @@ def plot_financials(revenues, data, save_dir=None):
     for d in range(1, 1):  # No dividers for single day
         plt.axvline(d * 24, color='gray', linestyle='--', linewidth=0.7)
 
-    # Subplot 2: Grid Revenue Streams colored by PV and BESS share
+    # Subplot 2: Revenue and Cost Streams (use new separated terms)
     plt.subplot(3, 1, 2)
-    plt.stackplot(
-        data['time_steps'],
-        revenues.get('grid_sell_revenue_pv', np.zeros_like(data['time_steps'])),
-        revenues.get('grid_sell_revenue_bess', np.zeros_like(data['time_steps'])),
-        labels=['Grid Sell Revenue (PV)', 'Grid Sell Revenue (BESS)'],
-        colors=['yellow', 'green']
-    )
+    #plt.plot(data['time_steps'], revenues.get('pv_to_consumer_rev', np.zeros_like(data['time_steps'])), label='PV to Consumer Revenue (Euro/step)', color='orange', linewidth=1)
+    plt.plot(data['time_steps'], revenues.get('pv_to_grid_rev', np.zeros_like(data['time_steps'])), label='PV to Grid Revenue (Euro/step)', color='darkorange', linewidth=1)
+    #plt.plot(data['time_steps'], revenues.get('pv_to_bess_cost', np.zeros_like(data['time_steps'])), label='PV to BESS Cost (Euro/step)', color='gold', linewidth=1)
+    #plt.plot(data['time_steps'], revenues.get('bess_to_consumer_rev', np.zeros_like(data['time_steps'])), label='BESS to Consumer Revenue (Euro/step)', color='green', linewidth=1)
+    plt.plot(data['time_steps'], -revenues.get('grid_buy_cost', np.zeros_like(data['time_steps'])), label='Grid Buy Cost (Euro/step)', color='blue', linewidth=1, linestyle='--')
+    plt.plot(data['time_steps'], revenues.get('bess_to_grid_rev', np.zeros_like(data['time_steps'])), label='BESS to Grid Revenue (Euro/step)', color='darkgreen', linewidth=1)
+    plt.plot(data['time_steps'], revenues.get('pv_to_ev_rev', np.zeros_like(data['time_steps'])), label='PV to EV Revenue (Euro/step)', color='yellow', linewidth=1)
+    plt.plot(data['time_steps'], revenues.get('bess_to_ev_rev', np.zeros_like(data['time_steps'])), label='BESS to EV Revenue (Euro/step)', color='lightgreen', linewidth=1)
+    # Add more if needed, e.g., grid_buy_cost as negative
     plt.xlabel('Time (h)')
     plt.ylabel('Euro/step')
-    plt.title('Grid Revenue Streams by Source')
-    plt.legend(loc='upper right', fontsize=9)
+    plt.title('Revenue and Cost Streams')
+    plt.legend(loc='upper right', fontsize=9, ncol=2)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(np.arange(0, 24, 6), [f"{h}:00" for h in np.arange(0, 24, 6)])
     for d in range(1, 1):  # No dividers for single day

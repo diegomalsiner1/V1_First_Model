@@ -48,12 +48,10 @@ class MPC:
         n.add("Bus", "DC", carrier='DC')
         n.add("Bus", "Grid", carrier='AC')
         n.add("Bus", "Grid_Sink", carrier='AC')  # Dummy sink bus for grid
+        n.add("Link", "Grid_Dump", bus0="Grid", bus1="Grid_Sink", p_nom=1e9, efficiency=0, marginal_cost=0, carrier='AC')
 
         # DC/AC converter (bidirectional) with carrier
         n.add("Link", "DC_AC_Converter", bus0="DC", bus1="AC", p_nom=1e6, p_min_pu=-1, efficiency=0.98, efficiency2=0.98, marginal_cost=0, carrier='DC')
-
-        # Add dummy link to absorb excess grid export
-        n.add("Link", "Grid_Dump", bus0="Grid", bus1="Grid_Sink", p_nom=1e9, efficiency=0, marginal_cost=0, carrier='AC')
 
         # PV generator (DC bus)
         pv_nom = max(pv_forecast)
@@ -78,16 +76,17 @@ class MPC:
         max_soc = self.bess_capacity
 
         # Grid import/export as Links with carriers (ensure unlimited supply and zero cost)
-        n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=1e9, efficiency=1.0, marginal_cost=0, carrier='AC')
-        n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=1e9, efficiency=1.0, marginal_cost=0, carrier='AC')
+        max_grid_import = np.max(demand_forecast) + np.max(ev_forecast)
+        max_grid_export = np.max(pv_forecast) + self.bess_power_limit
 
-        # Infinite generator at Grid bus (reference, cost 0)
-        n.add("Generator", "Grid_Source", bus="Grid", p_nom=1e9, marginal_cost=0)
-
-        # Assign time-varying marginal costs as Series with snapshots index
-        n.links_t.marginal_cost["Grid_Import"] = pd.Series(buy_forecast, index=n.snapshots)
-        # Negative marginal cost for grid export means revenue for selling to grid
+        n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=max_grid_import, efficiency=1.0, marginal_cost=0, carrier='AC')
+        n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=max_grid_export, efficiency=1.0, marginal_cost=0, carrier='AC')
         n.links_t.marginal_cost["Grid_Export"] = -pd.Series(sell_forecast, index=n.snapshots)
+
+        # Infinite generator at Grid bus (reference, cost = buy_forecast)
+        max_grid_import = 1e9
+        n.add("Generator", "Grid_Source", bus="Grid", p_nom=max_grid_import, marginal_cost=0)
+        n.generators_t.marginal_cost["Grid_Source"] = pd.Series(buy_forecast, index=n.snapshots)
 
         # Loads (AC bus) - add marginal benefit only for EV
         n.add("Load", "Consumer", bus="AC", p_set=0, marginal_cost=0)  # Zero marginal benefit for consumer (owner's demand)
@@ -96,8 +95,8 @@ class MPC:
         n.loads_t.p_set.loc[:, "EV"] = ev_forecast
 
         # Add dummy curtailment load on DC to penalize curtailment (lower penalty)
-        curtailment_penalty = 0.01  # Much lower penalty, allows curtailment if needed
-        n.add("Load", "Curtail", bus="DC", p_set=0, marginal_cost=curtailment_penalty)
+        #curtailment_penalty = 0.01  # Much lower penalty, allows curtailment if needed
+        #n.add("Load", "Curtail", bus="DC", p_set=0, marginal_cost=curtailment_penalty)
 
         # Create model
         n.optimize.create_model()

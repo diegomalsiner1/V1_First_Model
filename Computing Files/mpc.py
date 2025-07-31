@@ -26,7 +26,7 @@ class MPC:
         self.bess_percent_limit = params['BESS_limit']
         self.converter_efficiency = params.get('CONVERTER_EFFICIENCY', 0.98)
 
-    def predict(self, soc, pv_forecast, demand_forecast, ev_forecast, buy_forecast, sell_forecast, lcoe_pv, pi_ev, pi_consumer, horizon):
+    def predict(self, soc, pv_forecast, demand_forecast, ev_forecast, buy_forecast, sell_forecast, lcoe_pv, pi_ev, pi_consumer, horizon, start_dt):
         # Debug: print input parameters
         print("PV forecast (first 5):", pv_forecast[:5])
         print("BESS power limit:", self.bess_power_limit)
@@ -35,7 +35,8 @@ class MPC:
         print("Consumer demand (first 5):", demand_forecast[:5])
         print("EV demand (first 5):", ev_forecast[:5])
 
-        snapshots = pd.date_range("2024-01-01", periods=horizon, freq=f'{int(self.delta_t*60)}min')
+        # Use actual simulation start date for snapshots
+        snapshots = pd.date_range(start_dt, periods=horizon, freq=f'{int(self.delta_t*60)}min')
         n = pypsa.Network()
         n.set_snapshots(snapshots)
 
@@ -45,6 +46,7 @@ class MPC:
 
         # Add buses
         n.add("Bus", "AC", carrier='AC')
+        n.add("Bus", "DC", carrier='DC')
         n.add("Bus", "PV", carrier='DC')
         n.add("Bus", "Grid", carrier='AC')
         n.add("Bus", "BESS", carrier='DC')
@@ -86,18 +88,19 @@ class MPC:
         n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=max_grid_import, efficiency=1.0, marginal_cost=0, carrier='AC')
         n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=max_grid_export, efficiency=1.0, marginal_cost=0, carrier='AC')
         
+        # BIG generator at Grid bus (reference, cost = buy_forecast)
+        n.add("Generator", "Grid_Source", bus="Grid", p_nom=max_grid_import, marginal_cost=0)
+        max_grid_import = 1e9
+        
         #Revenue of selling Energy
         n.links_t.marginal_cost["Grid_Export"] = -pd.Series(sell_forecast, index=n.snapshots)
-
-        # Infinite generator at Grid bus (reference, cost = buy_forecast)
-        max_grid_import = 1e9
-        n.add("Generator", "Grid_Source", bus="Grid", p_nom=max_grid_import, marginal_cost=0)
+        
         #Cost of Energy Bought from Grid
         n.generators_t.marginal_cost["Grid_Source"] = pd.Series(buy_forecast, index=n.snapshots)
 
         # Loads with incentive EV at pi_ev, cons at pi_consumer
-        n.add("Load", "Consumer", bus="AC", p_set=0, marginal_cost=-pi_consumer)
-        n.add("Load", "EV", bus="AC", p_set=0, marginal_cost=-pi_ev)
+        n.add("Load", "Consumer", bus="AC", p_set=0, marginal_cost=0)
+        n.add("Load", "EV", bus="AC", p_set=0, marginal_cost=0)
         n.loads_t.p_set.loc[:, "Consumer"] = demand_forecast
         n.loads_t.p_set.loc[:, "EV"] = ev_forecast
 

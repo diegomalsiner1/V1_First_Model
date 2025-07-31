@@ -132,6 +132,7 @@ def load(reference_case=False, API_Prices=False):
         'start_weekday': start_weekday,
         'n_steps': n_steps,
         'delta_t': delta_t,
+        'start_dt': start_dt,
         'time_steps': time_steps,
         'time_indices': time_indices
     }

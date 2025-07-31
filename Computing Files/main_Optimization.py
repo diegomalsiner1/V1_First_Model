@@ -10,6 +10,7 @@ import plots
 import sys
 import os
 import openpyxl
+import pandas as pd  # Import pandas for handling datetime
 # Print Python executable path for debugging environment issues
 print(sys.executable)
 
@@ -77,9 +78,12 @@ for t in range(n_steps):
     buy_forecast = pad_to_horizon(data['grid_buy_price'][t:t + horizon], horizon)
     sell_forecast = pad_to_horizon(data['grid_sell_price'][t:t + horizon], horizon)
 
+    # Calculate the correct start_dt for this forecast window
+    current_start_dt = data['start_dt'] + pd.Timedelta(minutes=15*t)
+
     control = mpc_controller.predict(
         soc_actual[t], pv_forecast, demand_forecast, ev_forecast,
-        buy_forecast, sell_forecast, data['lcoe_pv'], data['pi_ev'], data['pi_consumer'], horizon
+        buy_forecast, sell_forecast, data['lcoe_pv'], data['pi_ev'], data['pi_consumer'], horizon, current_start_dt
     )
 
     # Store results for each timestep

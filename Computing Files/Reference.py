@@ -3,6 +3,8 @@ import post_process
 import plots
 import numpy as np
 import os
+import openpyxl
+from load_data import load_constants
 
 # Load input data for the reference case (no scaling, no BESS, no EVs)
 data = load_data.load(reference_case=True)
@@ -83,6 +85,58 @@ results = {
 # Compute revenues and print summary results
 revenues = post_process.compute_revenues(results, data)
 post_process.print_results(revenues, results, data)
+
+# Compute key metrics for LCOE/Financial Model (in kWh, using delta_t in hours; simplified, no BESS)
+delta_t = data['delta_t']
+total_pv_energy = np.sum(results['P_PV_gen']) * delta_t  # Total PV produced (kWh) over simulation period
+total_grid_sold = np.sum(results['P_grid_sold']) * delta_t  # Grid export (kWh)
+total_grid_bought = np.sum(results['P_grid_bought']) * delta_t  # Grid import (kWh)
+self_sufficiency = revenues['self_sufficiency']  # % (renewable coverage of consumer demand)
+ev_renewable_share = revenues['ev_renewable_share']  # % (renewable coverage of EV demand)
+total_revenue = revenues['total_revenue']  # € over simulation period
+
+# Other relevant parameters (no BESS)
+pv_old = float(load_constants()['PV_OLD'])
+pv_new = float(load_constants()['PV_NEW'])
+pv_scaling_factor = (pv_new + pv_old) / pv_old if pv_old > 0 else 1
+simulation_days = 7  # Assuming 7-day simulation; adjust if different for extrapolation in Excel
+
+# Organize data as a dictionary (simplified, no BESS keys)
+export_data = {
+    'Total PV Energy Produced (kWh)': total_pv_energy,  # Extrapolate in Excel: =this * (365 / simulation_days)
+    'Total Grid Sold (kWh)': total_grid_sold,
+    'Total Grid Bought (kWh)': total_grid_bought,
+    'Self-Sufficiency Ratio (%)': self_sufficiency,
+    'EV Renewable Share (%)': ev_renewable_share,
+    'Total Revenue (€)': total_revenue,  # Extrapolate if needed
+    'PV Scaling Factor': pv_scaling_factor,
+    'Simulation Period (days)': simulation_days  # For easy extrapolation in Excel
+}
+
+# Path to your existing Excel file
+excel_path = r'C:\Users\dell\V1_First_Model\Input Data Files\Financial_Model.xlsx'
+
+# Load existing workbook
+wb = openpyxl.load_workbook(excel_path)
+
+# Create or select sheet for inputs (use a different sheet for reference case to avoid overwriting)
+sheet_name = 'Output PyPSA'
+if sheet_name not in wb.sheetnames:
+    ws = wb.create_sheet(sheet_name)
+else:
+    ws = wb[sheet_name]
+    ws.delete_rows(1, ws.max_row)  # Clear existing data in this sheet only (optional; remove if appending)
+
+# Write data to sheet (Column A: keys, Column B: values; starting at row 1)
+row = 1
+for key, value in export_data.items():
+    ws.cell(row=row, column=1, value=key)
+    ws.cell(row=row, column=2, value=value)
+    row += 1
+
+# Save updated workbook
+wb.save(excel_path)
+print(f"Data exported to {excel_path} in sheet '{sheet_name}'")
 
 # Generate plots with _Reference suffix
 days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']

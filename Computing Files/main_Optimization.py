@@ -9,7 +9,7 @@ import post_process
 import plots
 import sys
 import os
-
+import openpyxl
 # Print Python executable path for debugging environment issues
 print(sys.executable)
 
@@ -46,7 +46,6 @@ mpc_controller = MPC(delta_t=data['delta_t'])
 
 # Initialize arrays for storing results
 n_steps = data['n_steps']
-data['time_steps'] = np.arange(n_steps)
 soc_actual = np.zeros(n_steps + 1)
 soc_actual[0] = data['soc_initial']
 P_PV_consumer_vals = np.zeros(n_steps)
@@ -116,6 +115,65 @@ results = {
 # Compute revenues and print summary results
 revenues = post_process.compute_revenues(results, data)
 post_process.print_results(revenues, results, data)
+
+#INSERT FROM HERE
+# Compute key metrics for LCOE/Financial Model (in kWh, using delta_t in hours)
+delta_t = data['delta_t']
+total_pv_energy = np.sum(results['P_PV_gen']) * delta_t  # Total PV produced (kWh) over simulation period
+total_bess_discharge = np.sum(results['P_BESS_discharge']) * delta_t  # Total BESS provided energy (kWh)
+total_grid_sold = np.sum(results['P_grid_sold']) * delta_t  # Grid export (kWh)
+total_grid_bought = np.sum(results['P_grid_bought']) * delta_t  # Grid import (kWh)
+self_sufficiency = revenues['self_sufficiency']  # % (renewable coverage of consumer demand)
+ev_renewable_share = revenues['ev_renewable_share']  # % (renewable coverage of EV demand)
+total_revenue = revenues['total_revenue']  # € over simulation period
+
+# Other relevant parameters
+bess_capacity = data['bess_capacity']  # kWh
+pv_old = float(load_constants()['PV_OLD'])
+pv_new = float(load_constants()['PV_NEW'])
+pv_scaling_factor = (pv_new + pv_old) / pv_old if pv_old > 0 else 1
+simulation_days = 7  # Assuming 7-day simulation; adjust if different for extrapolation in Excel
+
+# Organize data as a dictionary (add more keys if needed, e.g., for CAPEX sensitivity)
+export_data = {
+    'Total PV Energy Produced (kWh)': total_pv_energy,  # Extrapolate in Excel: =this * (365 / simulation_days)
+    'Total BESS Energy Discharged (kWh)': total_bess_discharge,  # Extrapolate similarly
+    'Total Grid Sold (kWh)': total_grid_sold,
+    'Total Grid Bought (kWh)': total_grid_bought,
+    'Self-Sufficiency Ratio (%)': self_sufficiency,
+    'EV Renewable Share (%)': ev_renewable_share,
+    'Total Revenue (€)': total_revenue,  # Extrapolate if needed
+    'BESS Capacity (kWh)': bess_capacity,
+    'PV Scaling Factor': pv_scaling_factor,
+    'Simulation Period (days)': simulation_days  # For easy extrapolation in Excel
+}
+
+# Path to your existing Excel file (hardcoded based on provided path; add file name if not 'Financial_Model.xlsx')
+excel_path = r'C:\Users\dell\V1_First_Model\Input Data Files\Financial_Model.xlsx'
+
+# Load existing workbook
+wb = openpyxl.load_workbook(excel_path)
+
+# Create or select sheet for inputs (won't overwrite other sheets)
+sheet_name = 'Output PyPSA'
+if sheet_name not in wb.sheetnames:
+    ws = wb.create_sheet(sheet_name)
+else:
+    ws = wb[sheet_name]
+    ws.delete_rows(3, ws.max_row)  # Clear existing data in this sheet only (optional; remove if appending)
+
+# Write data to sheet (Column C: keys, Column D: values; starting at row 1)
+row = 3
+for key, value in export_data.items():
+    ws.cell(row=row, column=1, value=key)
+    ws.cell(row=row, column=2, value=value)
+    row += 1
+
+# Save updated workbook
+wb.save(excel_path)
+print(f"Data exported to {excel_path} in sheet '{sheet_name}'")
+#END EXCEL SAVE AND EXPORT
+
 
 # Prepare output directory for plots
 output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')

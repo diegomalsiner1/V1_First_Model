@@ -107,9 +107,7 @@ export_data = {
     'Total Grid Sold (kWh)': total_grid_sold,
     'Total Grid Bought (kWh)': total_grid_bought,
     'Self-Sufficiency Ratio (%)': self_sufficiency,
-    'EV Renewable Share (%)': ev_renewable_share,
     'Total Revenue (€)': total_revenue,  # Extrapolate if needed
-    'PV Scaling Factor': pv_scaling_factor,
     'Simulation Period (days)': simulation_days  # For easy extrapolation in Excel
 }
 
@@ -125,7 +123,7 @@ if sheet_name not in wb.sheetnames:
     ws = wb.create_sheet(sheet_name)
 else:
     ws = wb[sheet_name]
-    ws.delete_rows(1, ws.max_row)  # Clear existing data in this sheet only (optional; remove if appending)
+    ws.delete_rows(1, 6)  # Clear existing data in this sheet only (optional; remove if appending)
 
 # Write data to sheet (Column A: keys, Column B: values; starting at row 1)
 row = 1

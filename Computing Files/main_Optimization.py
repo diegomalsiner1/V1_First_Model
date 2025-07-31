@@ -136,6 +136,7 @@ simulation_days = 7  # Assuming 7-day simulation; adjust if different for extrap
 
 # Organize data as a dictionary (add more keys if needed, e.g., for CAPEX sensitivity)
 export_data = {
+    'OPTIMIZED': 'BIG PV, BESS, EVs',
     'Total PV Energy Produced (kWh)': total_pv_energy,  # Extrapolate in Excel: =this * (365 / simulation_days)
     'Total BESS Energy Discharged (kWh)': total_bess_discharge,  # Extrapolate similarly
     'Total Grid Sold (kWh)': total_grid_sold,
@@ -160,13 +161,13 @@ if sheet_name not in wb.sheetnames:
     ws = wb.create_sheet(sheet_name)
 else:
     ws = wb[sheet_name]
-    ws.delete_rows(3, ws.max_row)  # Clear existing data in this sheet only (optional; remove if appending)
+    ws.delete_rows(1, 11)  # Clear existing data in this sheet only (optional; remove if appending)
 
 # Write data to sheet (Column C: keys, Column D: values; starting at row 1)
-row = 3
+row = 1
 for key, value in export_data.items():
-    ws.cell(row=row, column=1, value=key)
-    ws.cell(row=row, column=2, value=value)
+    ws.cell(row=row, column=3, value=key)
+    ws.cell(row=row, column=4, value=value)
     row += 1
 
 # Save updated workbook

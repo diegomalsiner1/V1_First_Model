@@ -48,13 +48,12 @@ def fetch_prices_from_csv():
     # Expand to 15-min intervals (96 values for 1 day)
     prices_15min = np.repeat(hourly_prices_period, 4)
     # For compatibility with API_prices, return hourly prices as pd.Series (length 24 for 1 day)
-    buy_prices = pd.Series(hourly_prices_period)
-    # Sell price: subtract margin (e.g., 0.005) and ensure non-negative
-    sell_prices = pd.Series(np.maximum(buy_prices - 0.005, 0))
-    return buy_prices, sell_prices
+    buy_prices_15min = pd.Series(prices_15min)
+    sell_prices_15min = pd.Series(prices_15min - 0.005)
+    return buy_prices_15min, sell_prices_15min
 
 if __name__ == "__main__":
-    buy, sell = fetch_prices_from_csv()
-    print("Buy prices (hourly, 1 day):", buy.values)
-    print("Sell prices (hourly, 1 day):", sell.values)
-    print(f"\nTotal hourly prices: {len(buy)}")
+    buy_prices_15min, sell_prices_15min = fetch_prices_from_csv()
+    print("Buy prices (15min intervals):", buy_prices_15min.values)
+    print("Sell prices (15min intervals):", sell_prices_15min.values)
+    print(f"\nTotal 15min prices: {len(buy_prices_15min)}")

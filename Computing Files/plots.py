@@ -10,7 +10,8 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     
     # Common x-axis setup for 7 days (15-min intervals)
     n_steps = len(data['time_steps'])
-    x_ticks = np.arange(0, n_steps+1, 96)  # Every 96 steps = 1 day
+    max_time = np.max(data['time_steps']) + data['delta_t']
+    x_ticks = np.arange(0, max_time + 0.01, 24)  # Ticks every 24 hours in hour units
     if 'day_labels' in data and len(data['day_labels']) == 7:
         x_labels = data['day_labels'] + [data['day_labels'][-1] + ' End']  # 8 labels for 8 ticks
     else:
@@ -27,7 +28,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(x_ticks, x_labels)
-    for d in range(1, len(x_labels)):
+    for d in range(1, len(x_ticks)):
         plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
 
     # Subplot 2: BESS Flows and SOC (absolute units)
@@ -42,7 +43,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     ax1.grid(True, linestyle=':', linewidth=0.7)
     ax1.set_xticks(x_ticks)
     ax1.set_xticklabels(x_labels)
-    for d in range(1, len(x_labels)):
+    for d in range(1, len(x_ticks)):
         ax1.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
     ax2 = ax1.twinx()
     ax2.plot(data['time_steps'], results.get('SOC_vals', np.zeros(n_steps + 1))[:n_steps], label='SOC (kWh)', color='green', linestyle='--', linewidth=1)
@@ -71,7 +72,7 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(x_ticks, x_labels)
-    for d in range(1, len(x_labels)):
+    for d in range(1, len(x_ticks)):
         plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
 
     plt.subplots_adjust(hspace=0.35, top=0.95, bottom=0.06, left=0.07, right=0.97)
@@ -92,9 +93,10 @@ def plot_financials(revenues, data, save_dir=None):
     """
     plt.figure(figsize=(14, 12))
     n_steps = len(data['time_steps'])
-    x_ticks = np.arange(0, n_steps+1, 96)
+    max_time = np.max(data['time_steps']) + data['delta_t']
+    x_ticks = np.arange(0, max_time + 0.01, 24)  # Ticks every 24 hours in hour units
     if 'day_labels' in data and len(data['day_labels']) == 7:
-        x_labels = data['day_labels'] + [data['day_labels'][-1] + ' End']
+        x_labels = data['day_labels'] + [data['day_labels'][-1] + ' End']  # 8 labels for 8 ticks
     else:
         x_labels = [str(d) for d in range(len(x_ticks))]
     # Subplot 1: Market Prices
@@ -109,7 +111,7 @@ def plot_financials(revenues, data, save_dir=None):
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(x_ticks, x_labels)
-    for d in range(1, len(x_labels)):
+    for d in range(1, len(x_ticks)):
         plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
     # Subplot 2: Revenue and Cost Streams (use new separated terms)
     plt.subplot(3, 1, 2)
@@ -124,7 +126,7 @@ def plot_financials(revenues, data, save_dir=None):
     plt.legend(loc='upper right', fontsize=9, ncol=2)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(x_ticks, x_labels)
-    for d in range(1, len(x_labels)):
+    for d in range(1, len(x_ticks)):
         plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
     # Subplot 3: Total and Cumulative Revenue
     plt.subplot(3, 1, 3)
@@ -137,7 +139,7 @@ def plot_financials(revenues, data, save_dir=None):
     ax1.grid(True, linestyle=':', linewidth=0.7)
     ax1.set_xticks(x_ticks)
     ax1.set_xticklabels(x_labels)
-    for d in range(1, len(x_labels)):
+    for d in range(1, len(x_ticks)):
         ax1.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
     ax2 = ax1.twinx()
     cumulative_revenue = np.cumsum(revenues.get('total_net_per_step', np.zeros_like(data['time_steps'])))
@@ -156,4 +158,3 @@ def plot_financials(revenues, data, save_dir=None):
     print(f"Saving financials plot to: {save_path}")  # Debug print
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close()
-

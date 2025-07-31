@@ -42,10 +42,10 @@ def generate_ev_charging_profile(start_time, end_time, num_sessions_per_day=0, s
     
     # Period probabilities and avg loads (as % of max power, scaled indirectly via sessions/energy)
     periods = [
-        (0, 6, 0.10, (20, 40)),   # 00-06h: low load
-        (6, 12, 0.40, (120, 200)), # 06-12h: higher
-        (12, 18, 0.30, (80, 160)), # 12-18h: medium
-        (18, 24, 0.25, (80, 120))  # 18-24h: medium-low
+        (0, 6, 0.15, (20, 100)),   # 00-06h: low load
+        (6, 12, 0.35, (50, 200)), # 06-12h: higher
+        (12, 18, 0.35, (50, 200)), # 12-18h: medium
+        (18, 24, 0.15, (20, 100))  # 18-24h: medium-low
     ]
     
     # Total probability for distributing sessions
@@ -72,7 +72,7 @@ def generate_ev_charging_profile(start_time, end_time, num_sessions_per_day=0, s
             for _ in range(num_sessions):
                 # Random session start within period (in minutes)
                 session_start_min = random.randint(0, period_min - 30)  # Assume min 30min session
-                session_duration_min = random.randint(30, 60)  # 30-60 min
+                session_duration_min = random.randint(30, 90)  # 30-90 min
                 # Power limited by charger max per outlet (assume 2 outlets, so per session max 200kW)
                 session_power = min(charger_max_power / 2, effective_session_energy / (session_duration_min / 60))  # Fit energy, cap at 200kW
                 

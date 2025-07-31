@@ -25,8 +25,7 @@ def compute_pv_power(start_time, end_time):
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     # Resample to 15min intervals, forward-fill, and scale energy to 15min chunks
-    df_15min = df[cols].resample('15min').ffill()
-    df_15min = df_15min  # Convert hourly kWh to 15-min kWh
+    df_15min = df[cols].resample('15min').ffill() * 0.25  # Convert hourly kWh to 15-min kWh
 
     # Calculate consumer demand
     df_15min['consumer_demand'] = (
@@ -44,8 +43,24 @@ def compute_pv_power(start_time, end_time):
 
     pv_production = df_week['InverterYield'].values
     consumer_demand = df_week['consumer_demand'].values
+    consumer_demand = df_week['consumer_demand'].values
+    
+    print(f"PV production sample: {pv_production[:50]}")
+    print(f"Consumer demand sample: {consumer_demand[:50]}")
+    print(f"Total PV production shape: {pv_production.shape}")
+    print(f"Total consumer demand shape: {consumer_demand.shape}")
 
     return {
         'pv_production': pv_production,
         'consumer_demand': consumer_demand
     }
+
+if __name__ == "__main__":
+    # Example usage: print debug info for the first week of 2024
+    result = compute_pv_power(pd.Timestamp('2024-01-01'), pd.Timestamp('2024-01-08'))
+    pv_power = result['pv_production']
+    consumer_demand = result['consumer_demand']
+    print("First 50 PV values:", pv_power[:50])
+    print("First 50 consumer demand values:", consumer_demand[:50])
+    print("PV shape:", pv_power.shape)
+    print("Consumer demand shape:", consumer_demand.shape)

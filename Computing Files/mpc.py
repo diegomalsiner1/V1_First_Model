@@ -65,34 +65,34 @@ class MPC:
                   efficiency_dispatch=1.0,
                   marginal_cost=0,
                   state_of_charge_initial=soc)
-            # Link for grid charging BESS
-            n.add("Link", "Grid_to_BESS", bus0="Grid", bus1="BESS", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0)
-            n.links_t.marginal_cost["Grid_to_BESS"] = pd.Series(buy_forecast, index=n.snapshots)
-            # Link for PV charging BESS
-            n.add("Link", "PV_to_BESS", bus0="PV", bus1="BESS", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0)
-            # Link for BESS discharge to AC bus
-            n.add("Link", "BESS_to_AC", bus0="BESS", bus1="AC", p_nom=self.bess_power_limit, efficiency=self.eta_discharge, marginal_cost=0)
-
-        # Add uni-directional Links for charging/discharging
-        n.add("Link", "Grid_to_BESS", bus0="Grid", bus1="DC", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0)  # Charge from grid
-        n.links_t.marginal_cost["Grid_to_BESS"] = pd.Series(buy_forecast, index=n.snapshots)  # Pay buy price
-
-        # For discharge, add if not implicit via DC_AC
-        n.add("Link", "BESS_to_AC", bus0="DC", bus1="AC", p_nom=self.bess_power_limit, efficiency=self.eta_discharge, marginal_cost=0)  # Discharge to AC
+        
+        # Link for grid charging BESS
+        n.add("Link", "Grid_to_BESS", bus0="Grid", bus1="BESS", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0)
+        #Cost when charging from Grid
+        n.links_t.marginal_cost["Grid_to_BESS"] = pd.Series(buy_forecast, index=n.snapshots)
+        
+        # Link for PV charging BESS
+        n.add("Link", "PV_to_BESS", bus0="PV", bus1="BESS", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0)
+        
+        # Link for BESS discharge to AC bus
+        n.add("Link", "BESS_to_AC", bus0="BESS", bus1="AC", p_nom=self.bess_power_limit, efficiency=self.eta_discharge, marginal_cost=0)
 
         # DC/AC converter for PV direct supply to AC bus
         n.add("Link", "PV_to_AC", bus0="PV", bus1="AC", p_nom=pv_nom, efficiency=0.98, marginal_cost=0)
 
         # Grid import/export as Links
-        max_grid_import = np.max(demand_forecast) + np.max(ev_forecast)
+        max_grid_import = np.max(demand_forecast) + np.max(ev_forecast) + self.bess_power_limit
         max_grid_export = np.max(pv_forecast) + self.bess_power_limit
         n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=max_grid_import, efficiency=1.0, marginal_cost=0, carrier='AC')
         n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=max_grid_export, efficiency=1.0, marginal_cost=0, carrier='AC')
+        
+        #Revenue of selling Energy
         n.links_t.marginal_cost["Grid_Export"] = -pd.Series(sell_forecast, index=n.snapshots)
 
         # Infinite generator at Grid bus (reference, cost = buy_forecast)
         max_grid_import = 1e9
         n.add("Generator", "Grid_Source", bus="Grid", p_nom=max_grid_import, marginal_cost=0)
+        #Cost of Energy Bought from Grid
         n.generators_t.marginal_cost["Grid_Source"] = pd.Series(buy_forecast, index=n.snapshots)
 
         # Loads with incentive EV at pi_ev, cons at pi_consumer

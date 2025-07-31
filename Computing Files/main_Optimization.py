@@ -133,20 +133,30 @@ pv_old = float(load_constants()['PV_OLD'])
 pv_new = float(load_constants()['PV_NEW'])
 pv_scaling_factor = (pv_new + pv_old) / pv_old if pv_old > 0 else 1
 simulation_days = 7  # Assuming 7-day simulation; adjust if different for extrapolation in Excel
+bess_to_grid_revenue = revenues['bess_to_grid_rev'].sum()  # Revenue from BESS to grid
+bess_to_ev_revenue = revenues['bess_to_ev_rev'].sum()      # Revenue from BESS to EV
+pv_to_grid_revenue = revenues['pv_to_grid_rev'].sum()      # Revenue from PV to grid
+pv_to_ev_revenue = revenues['pv_to_ev_rev'].sum()          # Revenue from PV to EV
+grid_import_cost = revenues['grid_buy_cost'].sum()         # Cost by grid import
 
 # Organize data as a dictionary (add more keys if needed, e.g., for CAPEX sensitivity)
 export_data = {
     'OPTIMIZED': 'BIG PV, BESS, EVs',
-    'Total PV Energy Produced (kWh)': total_pv_energy,  # Extrapolate in Excel: =this * (365 / simulation_days)
-    'Total BESS Energy Discharged (kWh)': total_bess_discharge,  # Extrapolate similarly
+    'Total PV Energy Produced (kWh)': total_pv_energy,
+    'Total BESS Energy Discharged (kWh)': total_bess_discharge,
     'Total Grid Sold (kWh)': total_grid_sold,
     'Total Grid Bought (kWh)': total_grid_bought,
     'Self-Sufficiency Ratio (%)': self_sufficiency,
     'EV Renewable Share (%)': ev_renewable_share,
-    'Total Revenue (€)': total_revenue,  # Extrapolate if needed
+    'Total Revenue (€)': total_revenue,
     'BESS Capacity (kWh)': bess_capacity,
     'PV Scaling Factor': pv_scaling_factor,
-    'Simulation Period (days)': simulation_days  # For easy extrapolation in Excel
+    'Simulation Period (days)': simulation_days,
+    'Revenue BESS to Grid (€)': bess_to_grid_revenue,
+    'Revenue BESS to EV (€)': bess_to_ev_revenue,
+    'Revenue PV to Grid (€)': pv_to_grid_revenue,
+    'Revenue PV to EV (€)': pv_to_ev_revenue,
+    'Cost Grid Import (€)': grid_import_cost
 }
 
 # Path to your existing Excel file (hardcoded based on provided path; add file name if not 'Financial_Model.xlsx')

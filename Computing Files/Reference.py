@@ -94,6 +94,16 @@ total_grid_bought = np.sum(results['P_grid_bought']) * delta_t  # Grid import (k
 self_sufficiency = revenues['self_sufficiency']  # % (renewable coverage of consumer demand)
 ev_renewable_share = revenues['ev_renewable_share']  # % (renewable coverage of EV demand)
 total_revenue = revenues['total_revenue']  # € over simulation period
+total_bess_discharge = 0  # No BESS in reference case
+bess_capacity = 0  # No BESS in reference case
+pv_old = float(load_constants()['PV_OLD'])
+pv_new = float(load_constants()['PV_NEW'])
+pv_scaling_factor = (pv_new + pv_old) / pv_old if pv_old > 0 else 1  # Likely 1 for reference, but computed for consistency
+bess_to_grid_revenue = revenues['total_bess_to_grid_rev']  # 0 in reference case
+bess_to_ev_revenue = revenues['total_bess_to_ev_rev']  # 0 in reference case
+pv_to_grid_revenue = revenues['total_pv_to_grid_rev']  # Revenue from PV to Grid
+pv_to_ev_revenue = revenues['total_pv_to_ev_rev']  # 0 in reference case
+grid_import_cost = revenues['total_grid_buy_cost']  # Cost from Grid Import
 
 # Other relevant parameters (no BESS)
 pv_old = float(load_constants()['PV_OLD'])
@@ -103,14 +113,23 @@ simulation_days = 7  # Assuming 7-day simulation; adjust if different for extrap
 
 # Organize data as a dictionary (simplified, no BESS keys)
 export_data = {
-    'Total PV Energy Produced (kWh)': total_pv_energy,  # Extrapolate in Excel: =this * (365 / simulation_days)
-    'Total Grid Sold (kWh)': total_grid_sold,
-    'Total Grid Bought (kWh)': total_grid_bought,
-    'Self-Sufficiency Ratio (%)': self_sufficiency,
-    'Total Revenue (€)': total_revenue,  # Extrapolate if needed
-    'Simulation Period (days)': simulation_days  # For easy extrapolation in Excel
+'REFERENCE': 'Original PV, no BESS, no EVs',
+'Total PV Energy Produced (kWh)': total_pv_energy,
+'Total BESS Energy Discharged (kWh)': total_bess_discharge,
+'Total Grid Sold (kWh)': total_grid_sold,
+'Total Grid Bought (kWh)': total_grid_bought,
+'Self-Sufficiency Ratio (%)': self_sufficiency,
+'EV Renewable Share (%)': ev_renewable_share,
+'Total Revenue (€)': total_revenue,
+'BESS Capacity (kWh)': bess_capacity,
+'PV Scaling Factor': pv_scaling_factor,
+'Simulation Period (days)': simulation_days,
+'Revenue BESS to Grid (€)': bess_to_grid_revenue,
+'Revenue BESS to EV (€)': bess_to_ev_revenue,
+'Revenue PV to Grid (€)': pv_to_grid_revenue,
+'Revenue PV to EV (€)': pv_to_ev_revenue,
+'Cost Grid Import (€)': grid_import_cost
 }
-
 # Path to your existing Excel file
 excel_path = r'C:\Users\dell\V1_First_Model\Input Data Files\Financial_Model.xlsx'
 
@@ -123,7 +142,7 @@ if sheet_name not in wb.sheetnames:
     ws = wb.create_sheet(sheet_name)
 else:
     ws = wb[sheet_name]
-    ws.delete_rows(1, 6)  # Clear existing data in this sheet only (optional; remove if appending)
+    ws.delete_rows(1, 16)  # Clear existing data in this sheet only (optional; remove if appending)
 
 # Write data to sheet (Column A: keys, Column B: values; starting at row 1)
 row = 1

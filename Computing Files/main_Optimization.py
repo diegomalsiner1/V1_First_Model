@@ -137,11 +137,11 @@ pv_old = float(load_constants()['PV_OLD'])
 pv_new = float(load_constants()['PV_NEW'])
 pv_scaling_factor = (pv_new + pv_old) / pv_old if pv_old > 0 else 1
 simulation_days = 7  # Assuming 7-day simulation; adjust if different for extrapolation in Excel
-bess_to_grid_revenue = revenues['bess_to_grid_rev'].sum()  # Revenue from BESS to grid
-bess_to_ev_revenue = revenues['bess_to_ev_rev'].sum()      # Revenue from BESS to EV
-pv_to_grid_revenue = revenues['pv_to_grid_rev'].sum()      # Revenue from PV to grid
-pv_to_ev_revenue = revenues['pv_to_ev_rev'].sum()          # Revenue from PV to EV
-grid_import_cost = revenues['grid_buy_cost'].sum()         # Cost by grid import
+bess_to_grid_revenue = revenues['total_bess_to_grid_rev']  # Revenue from BESS to grid
+bess_to_ev_revenue = revenues['total_bess_to_ev_rev']      # Revenue from BESS to EV
+pv_to_grid_revenue = revenues['total_pv_to_grid_rev']      # Revenue from PV to grid
+pv_to_ev_revenue = revenues['total_pv_to_ev_rev']          # Revenue from PV to EV
+grid_import_cost = revenues['total_grid_buy_cost']         # Cost by grid import
 
 # Organize data as a dictionary (add more keys if needed, e.g., for CAPEX sensitivity)
 export_data = {
@@ -175,7 +175,7 @@ if sheet_name not in wb.sheetnames:
     ws = wb.create_sheet(sheet_name)
 else:
     ws = wb[sheet_name]
-    ws.delete_rows(1, 11)  # Clear existing data in this sheet only (optional; remove if appending)
+    ws.delete_rows(1, 16)  # Clear existing data in this sheet only (optional; remove if appending)
 
 # Write data to sheet (Column C: keys, Column D: values; starting at row 1)
 row = 1

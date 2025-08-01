@@ -78,7 +78,14 @@ def compute_revenues(results, data):
     total_ev_demand = np.sum(ev_demand) * data['delta_t']
     renewable_to_ev = np.sum(pv_to_ev + bess_to_ev) * data['delta_t']
     revenues['ev_renewable_share'] = (renewable_to_ev / total_ev_demand * 100) if total_ev_demand > 0 else 0
-
+    
+    #Further export Data
+    revenues['total_pv_to_grid_rev'] = np.sum(revenues['pv_to_grid_rev'])
+    revenues['total_pv_to_ev_rev'] = np.sum(revenues['pv_to_ev_rev'])
+    revenues['total_bess_to_grid_rev'] = np.sum(revenues['bess_to_grid_rev'])
+    revenues['total_bess_to_ev_rev'] = np.sum(revenues['bess_to_ev_rev'])
+    revenues['total_grid_buy_cost'] = np.sum(revenues['grid_buy_cost'])  # Adding this for consistency with grid_import_cost
+    
     return revenues
 
 def print_results(revenues, results, data):
@@ -92,6 +99,10 @@ def print_results(revenues, results, data):
     """
     print(f"Total Revenue: Eur{revenues['total_revenue']:.2f}")
     print(f"Self-sufficiency ratio (consumer): {revenues['self_sufficiency']:.2f}%")
+    print(f"Revenue from PV to Grid: Eur{revenues['total_pv_to_grid_rev']:.2f}")
+    print(f"Revenue from PV to EV: Eur{revenues['total_pv_to_ev_rev']:.2f}")
+    print(f"Revenue from BESS to Grid: Eur{revenues['total_bess_to_grid_rev']:.2f}")
+    print(f"Revenue from BESS to EV: Eur{revenues['total_bess_to_ev_rev']:.2f}")
     print(f"EV renewable share: {revenues['ev_renewable_share']:.2f}%")
     # Remove slack_vals check, as PyPSA always balances demand if feasible
     print("All demand met in every timestep (no slack variable used).")

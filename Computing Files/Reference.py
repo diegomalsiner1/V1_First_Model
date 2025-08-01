@@ -82,9 +82,21 @@ results = {
     'P_BESS_discharge_vals': P_BESS_discharge_vals
 }
 
+results['P_BESS_discharge'] = np.zeros(data['n_steps'])
+results['P_BESS_charge'] = np.zeros(data['n_steps'])
+
 # Compute revenues and print summary results
 revenues = post_process.compute_revenues(results, data)
 post_process.print_results(revenues, results, data)
+
+
+# Calculate total cost if no PV plant
+total_revenue = revenues['total_revenue']  # € over simulation period
+total_no_pv_energy_cost = np.sum(consumer_demand * data['grid_buy_price'] * data['delta_t'])
+net_energy_cost_with_pv = -total_revenue  # since total_revenue = rev - cost, net cost = cost - rev = -total_revenue
+print(f"Net energy cost with PV: {net_energy_cost_with_pv} €")
+print(f"Net energy cost without PV: {total_no_pv_energy_cost} €")
+
 
 # Compute key metrics for LCOE/Financial Model (in kWh, using delta_t in hours; simplified, no BESS)
 delta_t = data['delta_t']
@@ -93,7 +105,6 @@ total_grid_sold = np.sum(results['P_grid_sold']) * delta_t  # Grid export (kWh)
 total_grid_bought = np.sum(results['P_grid_bought']) * delta_t  # Grid import (kWh)
 self_sufficiency = revenues['self_sufficiency']  # % (renewable coverage of consumer demand)
 ev_renewable_share = revenues['ev_renewable_share']  # % (renewable coverage of EV demand)
-total_revenue = revenues['total_revenue']  # € over simulation period
 total_bess_discharge = 0  # No BESS in reference case
 bess_capacity = 0  # No BESS in reference case
 pv_old = float(load_constants()['PV_OLD'])
@@ -104,6 +115,7 @@ bess_to_ev_revenue = revenues['total_bess_to_ev_rev']  # 0 in reference case
 pv_to_grid_revenue = revenues['total_pv_to_grid_rev']  # Revenue from PV to Grid
 pv_to_ev_revenue = revenues['total_pv_to_ev_rev']  # 0 in reference case
 grid_import_cost = revenues['total_grid_buy_cost']  # Cost from Grid Import
+
 
 # Other relevant parameters (no BESS)
 pv_old = float(load_constants()['PV_OLD'])
@@ -128,7 +140,9 @@ export_data = {
 'Revenue BESS to EV (€)': bess_to_ev_revenue,
 'Revenue PV to Grid (€)': pv_to_grid_revenue,
 'Revenue PV to EV (€)': pv_to_ev_revenue,
-'Cost Grid Import (€)': grid_import_cost
+'Cost Grid Import (with small PV) (€)': grid_import_cost,
+'Net Energy Cost with PV (€)': net_energy_cost_with_pv,
+'Net Energy Cost without PV (€)': total_no_pv_energy_cost
 }
 # Path to your existing Excel file
 excel_path = r'C:\Users\dell\V1_First_Model\Input Data Files\Financial_Model.xlsx'
@@ -136,13 +150,16 @@ excel_path = r'C:\Users\dell\V1_First_Model\Input Data Files\Financial_Model.xls
 # Load existing workbook
 wb = openpyxl.load_workbook(excel_path)
 
-# Create or select sheet for inputs (use a different sheet for reference case to avoid overwriting)
+# Create or select sheet for inputs (won't overwrite other sheets)
 sheet_name = 'Output PyPSA'
 if sheet_name not in wb.sheetnames:
     ws = wb.create_sheet(sheet_name)
 else:
     ws = wb[sheet_name]
-    ws.delete_rows(1, 16)  # Clear existing data in this sheet only (optional; remove if appending)
+    # Clear only columns 1 and 2 (A and B) for all rows with data
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=2):
+        for cell in row:
+            cell.value = None
 
 # Write data to sheet (Column A: keys, Column B: values; starting at row 1)
 row = 1

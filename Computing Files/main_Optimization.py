@@ -125,6 +125,8 @@ post_process.print_results(revenues, results, data)
 delta_t = data['delta_t']
 total_pv_energy = np.sum(results['P_PV_gen']) * delta_t  # Total PV produced (kWh) over simulation period
 total_bess_discharge = np.sum(results['P_BESS_discharge']) * delta_t  # Total BESS provided energy (kWh)
+total_pv_to_consumer = np.sum(results['P_PV_consumer_vals']) * delta_t  # PV direct to consumer (kWh)
+total_bess_to_consumer = np.sum(results['P_BESS_discharge']) * delta_t  # BESS discharge to consumer (kWh)
 total_grid_sold = np.sum(results['P_grid_sold']) * delta_t  # Grid export (kWh)
 total_grid_bought = np.sum(results['P_grid_bought']) * delta_t  # Grid import (kWh)
 self_sufficiency = revenues['self_sufficiency']  # % (renewable coverage of consumer demand)
@@ -160,7 +162,10 @@ export_data = {
     'Revenue BESS to EV (€)': bess_to_ev_revenue,
     'Revenue PV to Grid (€)': pv_to_grid_revenue,
     'Revenue PV to EV (€)': pv_to_ev_revenue,
-    'Cost Grid Import (€)': grid_import_cost
+    'Cost Grid Import (€)': grid_import_cost,
+    'PV to Consumer (kWh)': total_pv_to_consumer,
+    'BESS to Consumer (kWh)': total_bess_to_consumer
+
 }
 
 # Path to your existing Excel file (hardcoded based on provided path; add file name if not 'Financial_Model.xlsx')
@@ -175,7 +180,10 @@ if sheet_name not in wb.sheetnames:
     ws = wb.create_sheet(sheet_name)
 else:
     ws = wb[sheet_name]
-    ws.delete_rows(1, 16)  # Clear existing data in this sheet only (optional; remove if appending)
+    # Clear only columns 3 and 4 (C and D) for all rows with data
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=3, max_col=4):
+        for cell in row:
+            cell.value = None
 
 # Write data to sheet (Column C: keys, Column D: values; starting at row 1)
 row = 1

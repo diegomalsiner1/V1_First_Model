@@ -34,19 +34,27 @@ def sanity_check(data):
             raise ValueError(f"Length mismatch: {k} has {len(data[k])}, expected {data['n_steps']}.")
     return True
 
-# Fetches grid prices from API or ITA file
-def fetch_prices(start_dt, end_dt, use_api=False):
-    if use_api:
+
+# Fetches grid prices from API, ITA file, or HPFC forecast, for HPFC set Base/Peak Price and normalisation mode
+def fetch_prices(start_dt, end_dt, price_source="HPFC", base_forecast=100.0, peak_forecast=120.0, normalisation="mean"):
+    if price_source == "API":
         grid_buy_price_raw, grid_sell_price_raw = API_prices.fetch_prices()
-    else:
+    elif price_source == "HPFC":
+        import HPFC_prices_forecast
+        grid_buy_price_raw, grid_sell_price_raw = HPFC_prices_forecast.fetch_prices_from_csv(
+            start_dt, end_dt, base_forecast, peak_forecast, normalisation=normalisation
+        )
+    else: 
         grid_buy_price_raw = Prices_ITA.fetch_prices_from_csv(start_dt, end_dt)
         grid_sell_price_raw = grid_buy_price_raw - 0.01
     if len(grid_buy_price_raw) != 168:
         raise ValueError(f"Expected 168 hourly prices, got {len(grid_buy_price_raw)}.")
     return grid_buy_price_raw, grid_sell_price_raw
 
+
+ 
 # Main loader for all simulation input data
-def load(reference_case=False, API_Prices=False):
+def load(reference_case, price_source, base_forecast, peak_forecast, normalisation="mean"):
     """
     Load all input data for the simulation.
     Returns:
@@ -68,25 +76,25 @@ def load(reference_case=False, API_Prices=False):
     eta_discharge = float(constants_data['BESS_Efficiency_Discharge'])
     soc_initial = float(constants_data['SOC_Initial'])
     bess_percent_limit = float(constants_data['BESS_limit'])
-    pi_consumer = float(constants_data.get('Consumer_Price', 0))
+    pi_consumer = float(constants_data.get('Consumer_Price'))
     pi_ev = float(constants_data.get('EV_PRICE'))
     lcoe_pv = float(constants_data.get('LCOE_PV'))
     lcoe_bess = float(constants_data.get('LCOE_BESS'))
     pv_old = float(constants_data.get('PV_OLD'))
     pv_new = float(constants_data.get('PV_NEW'))
     bidding_zone = str(constants_data.get('BIDDING_ZONE'))   
-    # Fetch grid prices
-    if API_Prices:
-        grid_buy_price_raw, grid_sell_price_raw = API_prices.fetch_prices()
-    else:
-        grid_buy_price_raw, grid_sell_price_raw = Prices_ITA.fetch_prices_from_csv()
+    # Fetch grid prices using the selected price source
+    grid_buy_price_raw, grid_sell_price_raw = fetch_prices(
+        start_dt, end_dt, price_source=price_source, base_forecast=base_forecast, peak_forecast=peak_forecast, normalisation=normalisation
+    )
     # Convert hourly prices to 15-min intervals if needed
     if len(grid_buy_price_raw) == 168:
-        grid_buy_price = np.repeat(grid_buy_price_raw.values, 4)
-        grid_sell_price = np.repeat(grid_sell_price_raw.values, 4)
+        grid_buy_price = np.repeat(grid_buy_price_raw, 4)
+        grid_sell_price = np.repeat(grid_sell_price_raw, 4)
     else:
-        grid_buy_price = grid_buy_price_raw.values
-        grid_sell_price = grid_sell_price_raw.values
+        grid_buy_price = np.array(grid_buy_price_raw)
+        grid_sell_price = np.array(grid_sell_price_raw)
+    
     # Load PV and consumer demand profiles
     result = pv_data.compute_pv_power(start_dt, end_dt)
     if reference_case:
@@ -134,7 +142,8 @@ def load(reference_case=False, API_Prices=False):
         'delta_t': delta_t,
         'start_dt': start_dt,
         'time_steps': time_steps,
-        'time_indices': time_indices
+        'time_indices': time_indices,
+        'price_source': price_source
     }
     sanity_check(data)
     return data

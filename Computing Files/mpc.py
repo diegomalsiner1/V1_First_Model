@@ -46,7 +46,7 @@ class MPC:
 
         # Add buses
         n.add("Bus", "AC", carrier='AC')
-        n.add("Bus", "DC", carrier='DC')
+        #n.add("Bus", "DC", carrier='DC') Not needed
         n.add("Bus", "PV", carrier='DC')
         n.add("Bus", "Grid", carrier='AC')
         n.add("Bus", "BESS", carrier='DC')

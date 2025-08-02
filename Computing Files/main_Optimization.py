@@ -15,8 +15,7 @@ import pandas as pd  # Import pandas for handling datetime
 print(sys.executable)
 
 # Load all input data (from CSV or API, depending on load_data settings)
-data = load_data.load()
-
+data = load_data.load(reference_case=False, price_source="HPFC", base_forecast=100.0, peak_forecast=120.0)
 # Debug flag for verbose output
 DEBUG = True
 

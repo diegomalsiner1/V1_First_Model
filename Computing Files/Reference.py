@@ -7,8 +7,7 @@ import openpyxl
 from load_data import load_constants
 
 # Load input data for the reference case (no scaling, no BESS, no EVs)
-data = load_data.load(reference_case=True)
-
+data = load_data.load(reference_case=True, price_source="HPFC", base_forecast=100.0, peak_forecast=120.0)
 # Ensure no EVs in reference case
 data['ev_demand'] = np.zeros(data['n_steps'])
 

@@ -12,18 +12,26 @@ def compute_revenues(results, data):
     consumer_demand = data['consumer_demand']
     ev_demand = data['ev_demand']
 
-    # Priority 1: PV to demands/charge/grid
+    # Priority 1: PV to demands/charge/grid (improved logic)
     pv_to_cons = np.minimum(pv_gen, consumer_demand)
-    pv_to_ev = np.minimum(np.maximum(pv_gen - pv_to_cons, 0), ev_demand)
-    pv_to_charge = np.minimum(np.maximum(pv_gen - pv_to_cons - pv_to_ev, 0), bess_charge)
-    pv_to_grid = np.maximum(pv_gen - pv_to_cons - pv_to_ev - pv_to_charge, 0)
+    remaining_pv = pv_gen - pv_to_cons
+    
+    pv_to_ev = np.minimum(remaining_pv, ev_demand)
+    remaining_pv = remaining_pv - pv_to_ev
+    
+    pv_to_charge = np.minimum(remaining_pv, bess_charge)
+    pv_to_grid = np.maximum(remaining_pv - pv_to_charge, 0)
 
-    # Priority 2: BESS discharge to remaining demands/grid
+    # Priority 2: BESS discharge to remaining demands/grid (optimized for revenue)
     remaining_cons = np.maximum(consumer_demand - pv_to_cons, 0)
     remaining_ev = np.maximum(ev_demand - pv_to_ev, 0)
-    bess_to_cons = np.minimum(bess_discharge, remaining_cons)
-    bess_to_ev = np.minimum(np.maximum(bess_discharge - bess_to_cons, 0), remaining_ev)
-    bess_to_grid = np.maximum(bess_discharge - bess_to_cons - bess_to_ev, 0)
+    
+    # BESS discharge prioritization: EV (higher revenue) then consumer, then grid
+    bess_to_ev = np.minimum(bess_discharge, remaining_ev)
+    remaining_bess = bess_discharge - bess_to_ev
+    
+    bess_to_cons = np.minimum(remaining_bess, remaining_cons)
+    bess_to_grid = np.maximum(remaining_bess - bess_to_cons, 0)
 
     # Grid fills any gaps
     grid_to_cons = np.maximum(remaining_cons - bess_to_cons, 0)
@@ -50,11 +58,15 @@ def compute_revenues(results, data):
     # Revenues (per-step arrays; include self-cons savings and EV rev)
     grid_buy_cost = calculated_import * data['grid_buy_price'] * data['delta_t']
     grid_sell_revenue = calculated_export * data['grid_sell_price'] * data['delta_t']
-    #cons_savings = (pv_to_cons + bess_to_cons) * data['pi_consumer'] * data['delta_t']  # Avoided grid buy for consumer
+    
+    # BESS charging costs (grid charging + efficiency losses)
+    grid_to_bess_cost = grid_to_bess * data['grid_buy_price'] * data['delta_t']
+    bess_charging_efficiency_loss = grid_to_bess * (1 - data['eta_charge']) * data['grid_buy_price'] * data['delta_t']
+    
     ev_rev = (pv_to_ev + bess_to_ev) * data['pi_ev'] * data['delta_t']  # Revenue from renewable to EV
-    #pv_to_charge_cost = pv_to_charge * data['lcoe_pv'] * data['delta_t']  # Charging cost (if LCOE>0)
-
-    total_net_per_step = grid_sell_revenue - grid_buy_cost + ev_rev
+    
+    # Net revenue calculation including BESS costs
+    total_net_per_step = grid_sell_revenue - grid_buy_cost + ev_rev - grid_to_bess_cost - bess_charging_efficiency_loss
 
     revenues = {
         'grid_sell_revenue': grid_sell_revenue,
@@ -66,7 +78,10 @@ def compute_revenues(results, data):
         'pv_to_grid_rev': pv_to_grid * data['grid_sell_price'] * data['delta_t'],
         'bess_to_grid_rev': bess_to_grid * data['grid_sell_price'] * data['delta_t'],
         'total_net_per_step': total_net_per_step,
-        'total_revenue': np.sum(total_net_per_step)
+        'total_revenue': np.sum(total_net_per_step),
+        # Add BESS charging costs for transparency
+        'bess_grid_charging_cost': grid_to_bess_cost,
+        'bess_efficiency_loss_cost': bess_charging_efficiency_loss
     }
 
     # Self-sufficiency (consumer only, now credits PV properly)
@@ -104,5 +119,7 @@ def print_results(revenues, results, data):
     print(f"Revenue from BESS to Grid: Eur{revenues['total_bess_to_grid_rev']:.2f}")
     print(f"Revenue from BESS to EV: Eur{revenues['total_bess_to_ev_rev']:.2f}")
     print(f"EV renewable share: {revenues['ev_renewable_share']:.2f}%")
+    print(f"BESS Grid Charging Cost: Eur{np.sum(revenues['bess_grid_charging_cost']):.2f}")
+    print(f"BESS Efficiency Loss Cost: Eur{np.sum(revenues['bess_efficiency_loss_cost']):.2f}")
     # Remove slack_vals check, as PyPSA always balances demand if feasible
     print("All demand met in every timestep (no slack variable used).")

@@ -63,8 +63,8 @@ class MPC:
             n.add("StorageUnit", "BESS", bus="BESS",
                   p_nom=self.bess_power_limit,
                   max_hours=self.bess_capacity/self.bess_power_limit,
-                  efficiency_store=1.0,
-                  efficiency_dispatch=1.0,
+                  efficiency_store=self.eta_charge,
+                  efficiency_dispatch=self.eta_discharge,
                   marginal_cost=0,
                   state_of_charge_initial=soc)
         
@@ -88,9 +88,8 @@ class MPC:
         n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=max_grid_import, efficiency=1.0, marginal_cost=0, carrier='AC')
         n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=max_grid_export, efficiency=1.0, marginal_cost=0, carrier='AC')
         
-        # BIG generator at Grid bus (reference, cost = buy_forecast)
-        n.add("Generator", "Grid_Source", bus="Grid", p_nom=max_grid_import, marginal_cost=0)
-        max_grid_import = 1e9
+        # Grid source generator (reference, cost = buy_forecast)
+        n.add("Generator", "Grid_Source", bus="Grid", p_nom=1e9, marginal_cost=0)
         
         #Revenue of selling Energy
         n.links_t.marginal_cost["Grid_Export"] = -pd.Series(sell_forecast, index=n.snapshots)
@@ -111,12 +110,13 @@ class MPC:
         # Create model
         n.optimize.create_model()
 
-        #PyPSA Handels SOC bounds of Storage systems internally (later set lower bound)
-        # Add SOC constraints (if BESS exists)
-        #if "BESS" in n.storage_units.index:
-        #    soc_var = n.model["StorageUnit-state_of_charge"]
-        #    n.model.add_constraints(soc_var >= min_soc, name="SOC_min")
-        #    n.model.add_constraints(soc_var <= max_soc, name="SOC_max")
+        # Add SOC constraints (if BESS exists) - CRITICAL FOR PHYSICAL FEASIBILITY
+        if "BESS" in n.storage_units.index:
+            min_soc = self.bess_capacity * self.bess_percent_limit
+            max_soc = self.bess_capacity
+            soc_var = n.model["StorageUnit-state_of_charge"]
+            n.model.add_constraints(soc_var >= min_soc, name="SOC_min")
+            n.model.add_constraints(soc_var <= max_soc, name="SOC_max")
 
         try:
             n.optimize.solve_model(solver_name="highs", solver_options={"parallel": "on"})
@@ -187,9 +187,19 @@ class MPC:
             else:
                 ev_load = 0
 
-        # Add balance debug
-        dc_balance = pv_gen + grid_to_bess + pv_to_bess - bess_dispatch - (link_dc_to_ac / self.converter_efficiency)
+        # Add balance debug - improved energy balance checking
+        dc_balance = pv_gen - pv_to_bess - (link_dc_to_ac / self.converter_efficiency) - bess_dispatch
+        ac_balance = link_dc_to_ac + bess_dispatch - consumer_load - ev_load - grid_export + grid_import
+        
         print(f"DC balance check: {dc_balance:.2f} (should ~0)")
+        print(f"AC balance check: {ac_balance:.2f} (should ~0)")
+        
+        # Validate energy balance (allow small tolerance for numerical precision)
+        balance_tolerance = 0.1  # kW
+        if abs(dc_balance) > balance_tolerance or abs(ac_balance) > balance_tolerance:
+            print(f"⚠️  WARNING: Energy balance violation detected!")
+            print(f"   DC balance: {dc_balance:.3f} kW")
+            print(f"   AC balance: {ac_balance:.3f} kW")
 
         # Map DC to AC flow to demand and grid export
         dc_to_ac_available = max(link_dc_to_ac, 0)

@@ -22,7 +22,8 @@ DEBUG = True
 # Validate input data: ensure all required keys are present
 required_data_keys = [
     'pv_power', 'consumer_demand', 'ev_demand', 'grid_buy_price',
-    'grid_sell_price', 'pi_ev', 'lcoe_pv', 'n_steps', 'delta_t'
+    'grid_sell_price', 'pi_ev', 'lcoe_pv', 'n_steps', 'delta_t',
+    'eta_charge'  # Add BESS efficiency for post-processing
 ]
 missing_keys = [key for key in required_data_keys if key not in data]
 if missing_keys:
@@ -32,6 +33,8 @@ if DEBUG:
     print("Data validation passed")
     print(f"Number of timesteps: {data['n_steps']}")
     print(f"EV price loaded: {data.get('pi_ev', 'MISSING')}")
+    print(f"BESS charge efficiency: {data.get('eta_charge', 'MISSING')}")
+    print(f"BESS discharge efficiency: {data.get('eta_discharge', 'MISSING')}")
 
 # Assert consistency of data length for all main time series
 assert len(data['pv_power']) == data['n_steps']
@@ -98,7 +101,7 @@ for t in range(n_steps):
     P_grid_export_vals[t] = control['P_grid_export']
     soc_actual[t + 1] = control['SOC_next']
     P_PV_gen[t] = control['P_PV_gen']
-
+    
 # Compile results for post-processing and plotting
 results = {
     'P_PV_consumer_vals': P_PV_consumer_vals,
@@ -112,7 +115,10 @@ results = {
     'P_grid_import_vals': P_grid_import_vals,
     'P_grid_export_vals': P_grid_export_vals,
     'SOC_vals': soc_actual,
-    'P_PV_gen': P_PV_gen
+    'P_PV_gen': P_PV_gen,
+    # Add missing variables for grid import/export totals
+    'P_grid_sold': P_PV_grid_vals + P_BESS_grid_vals,
+    'P_grid_bought': P_grid_consumer_vals + P_grid_ev_vals + P_Grid_to_BESS_vals
 }
 
 # Compute revenues and print summary results

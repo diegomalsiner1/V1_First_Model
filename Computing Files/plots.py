@@ -120,10 +120,12 @@ def plot_financials(revenues, data, save_dir=None):
     plt.plot(data['time_steps'], revenues.get('bess_to_grid_rev', np.zeros_like(data['time_steps'])), label='BESS to Grid Revenue (Euro/step)', color='black', linewidth=1)
     plt.plot(data['time_steps'], revenues.get('pv_to_ev_rev', np.zeros_like(data['time_steps'])), label='PV to EV Revenue (Euro/step)', color='red', linewidth=1)
     plt.plot(data['time_steps'], revenues.get('bess_to_ev_rev', np.zeros_like(data['time_steps'])), label='BESS to EV Revenue (Euro/step)', color='green', linewidth=1)
+    plt.plot(data['time_steps'], -revenues.get('bess_grid_charging_cost', np.zeros_like(data['time_steps'])), label='BESS Grid Charging Cost (Euro/step)', color='purple', linewidth=1, linestyle='--')
+    plt.plot(data['time_steps'], -revenues.get('bess_efficiency_loss_cost', np.zeros_like(data['time_steps'])), label='BESS Efficiency Loss Cost (Euro/step)', color='brown', linewidth=1, linestyle='--')
     plt.xlabel('Time (h)')
     plt.ylabel('Euro/step')
     plt.title('Revenue and Cost Streams')
-    plt.legend(loc='upper right', fontsize=9, ncol=2)
+    plt.legend(loc='upper right', fontsize=8, ncol=2, bbox_to_anchor=(1.0, 1.0))
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(x_ticks, x_labels)
     for d in range(1, len(x_ticks)):

@@ -7,7 +7,7 @@ import numpy as np
 # Loads plant constants from CSV file (used for API key, bidding zone, period)
 def load_constants():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
+    csv_path = os.path.join(script_dir, '..', '..', 'Input Data Files', 'Constants_Plant.csv')
     constants_data = pd.read_csv(csv_path, comment='#')
     return constants_data
 

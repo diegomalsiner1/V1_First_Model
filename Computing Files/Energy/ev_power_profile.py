@@ -7,7 +7,7 @@ import os
 def load_constants():
     # Cross-platform, dynamic path to constants file
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    CONSTANTS_PATH = os.path.join(BASE_DIR, 'Input Data Files', 'Constants_Plant.csv')
+    CONSTANTS_PATH = os.path.join(BASE_DIR, '..', 'Input Data Files', 'Constants_Plant.csv')
     constants_df = pd.read_csv(CONSTANTS_PATH, comment='#')
     return constants_df
 

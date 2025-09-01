@@ -16,7 +16,7 @@ def load_constants(constants_path=None):
     if _CONSTANTS_CACHE is None:
         if constants_path is None:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            constants_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
+            constants_path = os.path.join(script_dir, '..', '..', 'Input Data Files', 'Constants_Plant.csv')
         constants_data = pd.read_csv(constants_path, comment='#', header=None, names=['Parameter', 'Value'])
         _CONSTANTS_CACHE = {}
         for _, row in constants_data.iterrows():

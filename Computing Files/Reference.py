@@ -1,10 +1,10 @@
-import load_data
-import post_process
-import plots
+import Controller.load_data as load_data
+import PostPlot.post_process as post_process
+import PostPlot.plots as plots
 import numpy as np
 import os
 import openpyxl
-from load_data import load_constants
+from Controller.load_data import load_constants
 
 # Load input data for the reference case (no scaling, no BESS, no EVs)
 data = load_data.load(reference_case=True, price_source="HPFC", base_forecast=100.0, peak_forecast=120.0)

@@ -14,7 +14,7 @@ def compute_pv_power(start_time, end_time):
     """
     # Cross-platform, dynamic path to data file
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    DATA_PATH = os.path.join(BASE_DIR, 'Input Data Files', 'pv_FdM_2024.csv')
+    DATA_PATH = os.path.join(BASE_DIR, '..', 'Input Data Files', 'pv_FdM_2024.csv')
 
     df = pd.read_csv(DATA_PATH)
     df['Time'] = pd.to_datetime(df['Time'], format='%m/%d/%Y %H:%M:%S')

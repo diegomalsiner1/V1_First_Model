@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 def fetch_prices_from_csv(start_dt, end_dt, base_forecast, peak_forecast, normalisation="mean", years=[2019, 2020, 2021, 2022, 2023]):
     # Folder containing yearly price files
-    prices_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Input Data Files', 'Full_ITA_NORD_19-24')
+    prices_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'Input Data Files', 'Full_ITA_NORD_19-24')
     historical_dfs = []
     for year in years:
         file_name = f"{year}0101_{year}1231_MGP_PrezziZonali_Nord.CSV"
@@ -54,7 +54,7 @@ def fetch_prices_from_csv(start_dt, end_dt, base_forecast, peak_forecast, normal
 
 if __name__ == "__main__":
     # Example usage: load start/end from Constants_Plant.csv
-    constants_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Input Data Files', 'Constants_Plant.csv')
+    constants_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'Input Data Files', 'Constants_Plant.csv')
     constants_data = pd.read_csv(constants_path, comment='#', header=None, names=['Parameter', 'Value'])
     params = {str(row['Parameter']).strip(): row['Value'] for _, row in constants_data.iterrows()}
     start_dt = pd.to_datetime(str(params['PERIOD_START']), format='%Y%m%d%H%M')

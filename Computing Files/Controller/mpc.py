@@ -4,9 +4,9 @@ import numpy as np
 import os
 
 def load_bess_params(constants_path=None):
-            if constants_path is None:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            constants_path = os.path.join(script_dir, '..', '..', 'Input Data Files', 'Constants_Plant.csv')
+    if constants_path is None:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        constants_path = os.path.join(script_dir, '..', '..', 'Input Data Files', 'Constants_Plant.csv')
     constants_data = pd.read_csv(constants_path, comment='#', header=None, names=['Parameter', 'Value'])
     params = {}
     for key in ['BESS_Capacity', 'BESS_Power_Limit', 'BESS_Efficiency_Charge', 'BESS_Efficiency_Discharge', 'SOC_Initial', 'BESS_limit', 'CONVERTER_EFFICIENCY']:

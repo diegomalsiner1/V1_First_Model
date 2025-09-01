@@ -1,22 +1,27 @@
 import numpy as np
 import pandas as pd
 import os
-import API_prices
-import Prices_ITA
-import pv_consumer_data_2024 as pv_data
-import ev_power_profile
+import Prices.API_prices as API_prices
+import Prices.Prices_ITA as Prices_ITA
+import Energy.pv_consumer_data_2024 as pv_data
+import Energy.ev_power_profile as ev_power_profile
 from datetime import datetime, timedelta
 
-# Loads plant constants from CSV file
+# Global cache for constants to avoid repeated file reads
+_CONSTANTS_CACHE = None
+
+# Loads plant constants from CSV file with caching
 def load_constants(constants_path=None):
-    if constants_path is None:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        constants_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
-    constants_data = pd.read_csv(constants_path, comment='#', header=None, names=['Parameter', 'Value'])
-    params = {}
-    for _, row in constants_data.iterrows():
-        params[str(row['Parameter']).strip()] = row['Value']
-    return params
+    global _CONSTANTS_CACHE
+    if _CONSTANTS_CACHE is None:
+        if constants_path is None:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            constants_path = os.path.join(script_dir, '..', 'Input Data Files', 'Constants_Plant.csv')
+        constants_data = pd.read_csv(constants_path, comment='#', header=None, names=['Parameter', 'Value'])
+        _CONSTANTS_CACHE = {}
+        for _, row in constants_data.iterrows():
+            _CONSTANTS_CACHE[str(row['Parameter']).strip()] = row['Value']
+    return _CONSTANTS_CACHE
 
 # Builds time vector for simulation based on start/end and timestep
 def build_time_vector(start_dt, end_dt, delta_t):
@@ -34,25 +39,23 @@ def sanity_check(data):
             raise ValueError(f"Length mismatch: {k} has {len(data[k])}, expected {data['n_steps']}.")
     return True
 
-
 # Fetches grid prices from API, ITA file, or HPFC forecast, for HPFC set Base/Peak Price and normalisation mode
 def fetch_prices(start_dt, end_dt, price_source="HPFC", base_forecast=100.0, peak_forecast=120.0, normalisation="mean"):
     if price_source == "API":
         grid_buy_price_raw, grid_sell_price_raw = API_prices.fetch_prices()
     elif price_source == "HPFC":
-        import HPFC_prices_forecast
+        import Prices.HPFC_prices_forecast as HPFC_prices_forecast
         grid_buy_price_raw, grid_sell_price_raw = HPFC_prices_forecast.fetch_prices_from_csv(
             start_dt, end_dt, base_forecast, peak_forecast, normalisation=normalisation
         )
     else: 
         grid_buy_price_raw = Prices_ITA.fetch_prices_from_csv(start_dt, end_dt)
         grid_sell_price_raw = grid_buy_price_raw - 0.01
+    
     if len(grid_buy_price_raw) != 168:
         raise ValueError(f"Expected 168 hourly prices, got {len(grid_buy_price_raw)}.")
     return grid_buy_price_raw, grid_sell_price_raw
 
-
- 
 # Main loader for all simulation input data
 def load(reference_case, price_source, base_forecast, peak_forecast, normalisation="mean"):
     """
@@ -61,15 +64,18 @@ def load(reference_case, price_source, base_forecast, peak_forecast, normalisati
         dict: All simulation data.
     """
     constants_data = load_constants()
+    
     # Access parameters directly from the dictionary
     period_start_str = str(constants_data['PERIOD_START'])
     period_end_str = str(constants_data['PERIOD_END'])
     start_dt = pd.to_datetime(period_start_str, format='%Y%m%d%H%M')
     end_dt = pd.to_datetime(period_end_str, format='%Y%m%d%H%M')
     delta_t = 0.25  # Simulation timestep in hours (15 min)
+    
     # Build time vector for simulation
     time_steps, n_steps, time_indices = build_time_vector(start_dt, end_dt, delta_t)
-    # Read plant and simulation parameters
+    
+    # Read plant and simulation parameters - optimized with direct access
     bess_capacity = float(constants_data['BESS_Capacity'])
     bess_power_limit = float(constants_data['BESS_Power_Limit'])
     eta_charge = float(constants_data['BESS_Efficiency_Charge'])
@@ -83,11 +89,13 @@ def load(reference_case, price_source, base_forecast, peak_forecast, normalisati
     pv_old = float(constants_data.get('PV_OLD'))
     pv_new = float(constants_data.get('PV_NEW'))
     bidding_zone = str(constants_data.get('BIDDING_ZONE'))   
+    
     # Fetch grid prices using the selected price source
     grid_buy_price_raw, grid_sell_price_raw = fetch_prices(
         start_dt, end_dt, price_source=price_source, base_forecast=base_forecast, peak_forecast=peak_forecast, normalisation=normalisation
     )
-    # Convert hourly prices to 15-min intervals if needed
+    
+    # Convert hourly prices to 15-min intervals if needed - optimized with numpy
     if len(grid_buy_price_raw) == 168:
         grid_buy_price = np.repeat(grid_buy_price_raw, 4)
         grid_sell_price = np.repeat(grid_sell_price_raw, 4)
@@ -103,6 +111,7 @@ def load(reference_case, price_source, base_forecast, peak_forecast, normalisati
     else:
         pv_power = ((pv_new + pv_old)/pv_old) * result['pv_production']*(1/delta_t)
         consumer_demand = result['consumer_demand']*(1/delta_t)
+    
     # Load EV charging profile
     ev_sessions_per_day = int(constants_data.get('EV_NUM_SESSIONS_PER_DAY', 2))
     ev_session_energy = float(constants_data.get('EV_SESSION_ENERGY', 10))
@@ -117,6 +126,7 @@ def load(reference_case, price_source, base_forecast, peak_forecast, normalisati
     total_demand = consumer_demand + ev_demand
     start_weekday = start_dt.weekday()
     period_str = f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}"
+    
     # Compile all simulation data into a dictionary
     data = {
         'pv_power': pv_power,
@@ -143,7 +153,9 @@ def load(reference_case, price_source, base_forecast, peak_forecast, normalisati
         'start_dt': start_dt,
         'time_steps': time_steps,
         'time_indices': time_indices,
-        'price_source': price_source
+        'price_source': price_source,
+        'pv_old': pv_old,
+        'pv_new': pv_new
     }
     sanity_check(data)
     return data

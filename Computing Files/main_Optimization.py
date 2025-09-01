@@ -1,12 +1,12 @@
 # Main optimization script for energy system simulation.
 # Loads input data, runs MPC optimization, collects results, and generates plots.
 
-from mpc import MPC
-from load_data import load_constants
-import load_data
+from Controller.mpc import MPC
+from Controller.load_data import load_constants
+import Controller.load_data as load_data
 import numpy as np
-import post_process
-import plots
+import PostPlot.post_process as post_process
+import PostPlot.plots as plots
 import sys
 import os
 import openpyxl
@@ -116,8 +116,9 @@ results = {
     'P_grid_export_vals': P_grid_export_vals,
     'SOC_vals': soc_actual,
     'P_PV_gen': P_PV_gen,
-    # Add missing variables for grid import/export totals
-    'P_grid_sold': P_PV_grid_vals + P_BESS_grid_vals,
+    # Note: P_grid_sold and P_BESS_grid_vals will be calculated in post_process.compute_revenues()
+    # These preliminary values will be overridden by the post-processing function
+    'P_grid_sold': P_PV_grid_vals,  # Preliminary - will be corrected to include BESS exports in post-processing
     'P_grid_bought': P_grid_consumer_vals + P_grid_ev_vals + P_Grid_to_BESS_vals
 }
 
@@ -140,8 +141,8 @@ total_revenue = revenues['total_revenue']  # € over simulation period
 
 # Other relevant parameters
 bess_capacity = data['bess_capacity']  # kWh
-pv_old = float(load_constants()['PV_OLD'])
-pv_new = float(load_constants()['PV_NEW'])
+pv_old = float(data.get('pv_old', 0))  # Get from data if available, otherwise 0
+pv_new = float(data.get('pv_new', 0))  # Get from data if available, otherwise 0
 pv_scaling_factor = (pv_new + pv_old) / pv_old if pv_old > 0 else 1
 simulation_days = 7  # Assuming 7-day simulation; adjust if different for extrapolation in Excel
 bess_to_grid_revenue = revenues['total_bess_to_grid_rev']  # Revenue from BESS to grid
@@ -173,8 +174,8 @@ export_data = {
 
 }
 
-# Path to your existing Excel file (hardcoded based on provided path; add file name if not 'Financial_Model.xlsx')
-excel_path = r'C:\Users\dell\V1_First_Model\Input Data Files\Financial_Model.xlsx'
+# Path to your existing Excel file (updated for current system)
+excel_path = r'C:\Users\diego\V1_First_Model-1\Input Data Files\Financial_Model.xlsx'
 
 # Load existing workbook
 wb = openpyxl.load_workbook(excel_path)

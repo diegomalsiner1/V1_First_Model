@@ -27,14 +27,6 @@ class MPC:
         self.converter_efficiency = params.get('CONVERTER_EFFICIENCY', 0.98)
 
     def predict(self, soc, pv_forecast, demand_forecast, ev_forecast, buy_forecast, sell_forecast, lcoe_pv, pi_ev, pi_consumer, horizon, start_dt):
-        # Debug: print input parameters
-        print("PV forecast (first 5):", pv_forecast[:5])
-        print("BESS power limit:", self.bess_power_limit)
-        print("BESS capacity:", self.bess_capacity)
-        print("Grid buy price (first 5):", buy_forecast[:5])
-        print("Consumer demand (first 5):", demand_forecast[:5])
-        print("EV demand (first 5):", ev_forecast[:5])
-
         # Use actual simulation start date for snapshots
         snapshots = pd.date_range(start_dt, periods=horizon, freq=f'{int(self.delta_t*60)}min')
         n = pypsa.Network()
@@ -46,7 +38,6 @@ class MPC:
 
         # Add buses
         n.add("Bus", "AC", carrier='AC')
-        #n.add("Bus", "DC", carrier='DC') Not needed
         n.add("Bus", "PV", carrier='DC')
         n.add("Bus", "Grid", carrier='AC')
         n.add("Bus", "BESS", carrier='DC')
@@ -110,7 +101,7 @@ class MPC:
         # Create model
         n.optimize.create_model()
 
-        # Add SOC constraints (if BESS exists) - CRITICAL FOR PHYSICAL FEASIBILITY
+        # Add explicit energy balance constraints for physical feasibility
         if "BESS" in n.storage_units.index:
             min_soc = self.bess_capacity * self.bess_percent_limit
             max_soc = self.bess_capacity
@@ -118,20 +109,42 @@ class MPC:
             n.model.add_constraints(soc_var >= min_soc, name="SOC_min")
             n.model.add_constraints(soc_var <= max_soc, name="SOC_max")
 
+        # Add explicit nodal balance constraints
+        try:
+            # DC bus balance: PV generation = PV to BESS + PV to AC
+            if "PV" in n.generators.index and "PV_to_BESS" in n.links.index and "PV_to_AC" in n.links.index:
+                pv_gen = n.model["Generator-p"]["PV"]
+                pv_to_bess = n.model["Link-p"]["PV_to_BESS"]
+                pv_to_ac = n.model["Link-p"]["PV_to_AC"]
+                n.model.add_constraints(pv_gen == pv_to_bess + pv_to_ac, name="DC_Balance")
+            
+            # AC bus balance: PV to AC + BESS to AC + Grid Import = Consumer + EV + Grid Export
+            if "PV_to_AC" in n.links.index and "BESS_to_AC" in n.links.index:
+                pv_to_ac = n.model["Link-p"]["PV_to_AC"]
+                bess_to_ac = n.model["Link-p"]["BESS_to_AC"]
+                grid_import = n.model["Link-p"]["Grid_Import"]
+                grid_export = n.model["Link-p"]["Grid_Export"]
+                consumer_load = n.model["Load-p"]["Consumer"]
+                ev_load = n.model["Load-p"]["EV"]
+                n.model.add_constraints(pv_to_ac + bess_to_ac + grid_import == consumer_load + ev_load + grid_export, name="AC_Balance")
+                
+        except Exception as e:
+            print(f"Warning: Could not add explicit balance constraints: {e}")
+            print("PyPSA will use default nodal balance constraints")
+
         try:
             n.optimize.solve_model(solver_name="highs", solver_options={"parallel": "on"})
         except Exception as e:
             print(f"HiGHS failed: {e}. Falling back to Gurobi.")
-            n.optimize.solve_model(solver_name="gurobi", solver_options={"DualReductions": 0})
+            try:
+                n.optimize.solve_model(solver_name="gurobi", solver_options={"DualReductions": 0})
+            except Exception as e2:
+                print(f"Gurobi also failed: {e2}")
+                raise Exception(f"Both solvers failed. HiGHS: {e}, Gurobi: {e2}")
         
         # Fail-safe: check if solved
         if not n.is_solved:
             print("Optimization failed: infeasible or unbounded.")
-            # Compute IIS for debug
-            n.model.solver_model.computeIIS()
-            n.model.solver_model.write("iis.ilp")  # Inspect this file for conflicting constraints
-            print("IIS written to iis.ilp - open it to see conflicting constraints (e.g., SOC bounds vs balance).")
-            
             # Define variables for failed case
             bess_dispatch = 0
             soc_next = soc
@@ -190,9 +203,6 @@ class MPC:
         # Add balance debug - improved energy balance checking
         dc_balance = pv_gen - pv_to_bess - (link_dc_to_ac / self.converter_efficiency) - bess_dispatch
         ac_balance = link_dc_to_ac + bess_dispatch - consumer_load - ev_load - grid_export + grid_import
-        
-        print(f"DC balance check: {dc_balance:.2f} (should ~0)")
-        print(f"AC balance check: {ac_balance:.2f} (should ~0)")
         
         # Validate energy balance (allow small tolerance for numerical precision)
         balance_tolerance = 0.1  # kW

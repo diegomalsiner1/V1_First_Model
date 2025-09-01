@@ -1,6 +1,7 @@
 # Main optimization script for energy system simulation.
 # Loads input data, runs MPC optimization, collects results, and generates plots.
 
+import time
 from Controller.mpc import MPC
 from Controller.load_data import load_constants
 import Controller.load_data as load_data
@@ -11,11 +12,18 @@ import sys
 import os
 import openpyxl
 import pandas as pd  # Import pandas for handling datetime
+
+# Start timing
+start_time = time.time()
+print(f"Starting optimization at {time.strftime('%H:%M:%S')}")
+
 # Print Python executable path for debugging environment issues
 print(sys.executable)
 
 # Load all input data (from CSV or API, depending on load_data settings)
 data = load_data.load(reference_case=False, price_source="HPFC", base_forecast=100.0, peak_forecast=120.0)
+data_load_time = time.time()
+print(f"Data loading completed in {data_load_time - start_time:.2f} seconds")
 # Debug flag for verbose output
 DEBUG = True
 
@@ -102,6 +110,11 @@ for t in range(n_steps):
     soc_actual[t + 1] = control['SOC_next']
     P_PV_gen[t] = control['P_PV_gen']
     
+# MPC loop completed
+mpc_complete_time = time.time()
+print(f"MPC optimization completed in {mpc_complete_time - data_load_time:.2f} seconds")
+print(f"Average time per timestep: {(mpc_complete_time - data_load_time)/n_steps:.3f} seconds")
+    
 # Compile results for post-processing and plotting
 results = {
     'P_PV_consumer_vals': P_PV_consumer_vals,
@@ -125,6 +138,8 @@ results = {
 # Compute revenues and print summary results
 revenues = post_process.compute_revenues(results, data)
 post_process.print_results(revenues, results, data)
+post_process_time = time.time()
+print(f"Post-processing completed in {post_process_time - mpc_complete_time:.2f} seconds")
 
 #INSERT FROM HERE
 # Compute key metrics for LCOE/Financial Model (in kWh, using delta_t in hours)
@@ -209,6 +224,10 @@ output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Out
 os.makedirs(output_dir, exist_ok=True)
 data['plot_suffix'] = ''  # No suffix for main optimization
 
+# Add grid import/export data to data dictionary for arbitrage visualization
+data['grid_import_vals'] = P_grid_import_vals
+data['grid_export_vals'] = P_grid_export_vals
+
 # Prepare day labels for plotting (for x-axis ticks)
 days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(7)]
@@ -216,3 +235,14 @@ data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(7)]
 # Generate plots for energy flows and financials
 plots.plot_energy_flows(results, data, revenues, save_dir=output_dir)
 plots.plot_financials(revenues, data, save_dir=output_dir)
+plotting_time = time.time()
+print(f"Plotting completed in {plotting_time - post_process_time:.2f} seconds")
+
+# End timing and print results
+end_time = time.time()
+runtime = end_time - start_time
+print(f"\n{'='*50}")
+print(f"OPTIMIZATION COMPLETED SUCCESSFULLY!")
+print(f"Runtime: {runtime:.2f} seconds ({runtime/60:.2f} minutes)")
+print(f"Finished at: {time.strftime('%H:%M:%S')}")
+print(f"{'='*50}")

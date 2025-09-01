@@ -99,15 +99,57 @@ def plot_financials(revenues, data, save_dir=None):
         x_labels = data['day_labels'] + [data['day_labels'][-1] + ' End']  # 8 labels for 8 ticks
     else:
         x_labels = [str(d) for d in range(len(x_ticks))]
-    # Subplot 1: Market Prices
+    # Subplot 1: Market Prices with Arbitrage Visualization
     plt.subplot(3, 1, 1)
-    plt.plot(data['time_steps'], data['grid_buy_price'], label='Grid Buy Price (Euro/kWh)', color='blue', linewidth=1)
-    plt.plot(data['time_steps'], data['grid_sell_price'], label='Grid Sell Price (Euro/kWh)', color='lightblue', linestyle='--', linewidth=1)
+    
+    # Get grid import/export data for arbitrage visualization
+    grid_import = data.get('grid_import_vals', np.zeros_like(data['time_steps']))
+    grid_export = data.get('grid_export_vals', np.zeros_like(data['time_steps']))
+    
+    # Create background shading for arbitrage periods
+    # Find periods where we're buying from grid (positive import)
+    buying_periods = grid_import > 0.01  # Small threshold to avoid numerical noise
+    selling_periods = grid_export > 0.01  # Small threshold to avoid numerical noise
+    
+    # Create shaded areas for arbitrage visualization
+    if np.any(buying_periods):
+        plt.fill_between(data['time_steps'], 0, np.max(data['grid_buy_price']) * 1.1, 
+                        where=buying_periods, alpha=0.3, color='red', 
+                        label='Buying from Grid', interpolate=True)
+    
+    if np.any(selling_periods):
+        plt.fill_between(data['time_steps'], 0, np.max(data['grid_sell_price']) * 1.1, 
+                        where=selling_periods, alpha=0.3, color='green', 
+                        label='Selling to Grid', interpolate=True)
+    
+    # Plot price lines on top of the background
+    plt.plot(data['time_steps'], data['grid_buy_price'], label='Grid Buy Price (Euro/kWh)', color='blue', linewidth=2)
+    plt.plot(data['time_steps'], data['grid_sell_price'], label='Grid Sell Price (Euro/kWh)', color='lightblue', linestyle='--', linewidth=2)
     plt.plot(data['time_steps'], np.full(data['n_steps'], data['lcoe_pv']), label='PV LCOE (Euro/kWh)', color='orange', linestyle='--', linewidth=1)
     plt.plot(data['time_steps'], np.full(data['n_steps'], data['lcoe_bess']), label='BESS LCOE (Euro/kWh)', color='green', linestyle='--', linewidth=1)
+    
+    # Calculate and display arbitrage statistics
+    total_buying_time = np.sum(buying_periods) * data['delta_t']  # hours
+    total_selling_time = np.sum(selling_periods) * data['delta_t']  # hours
+    total_energy_bought = np.sum(grid_import) * data['delta_t']  # kWh
+    total_energy_sold = np.sum(grid_export) * data['delta_t']  # kWh
+    
+    # Calculate average prices during arbitrage periods
+    if np.any(buying_periods):
+        avg_buy_price = np.mean(data['grid_buy_price'][buying_periods])
+    else:
+        avg_buy_price = 0
+        
+    if np.any(selling_periods):
+        avg_sell_price = np.mean(data['grid_sell_price'][selling_periods])
+    else:
+        avg_sell_price = 0
+    
     plt.xlabel('Time (h)')
     plt.ylabel('Price (Euro/kWh)')
-    plt.title(f'Energy Market Price {data.get("price_source")} \n{data["period_str"]}')
+    plt.title(f'Energy Market Price {data.get("price_source")} - Arbitrage Visualization\n'
+              f'{data["period_str"]} | Buy: {total_buying_time:.1f}h ({total_energy_bought:.0f}kWh) @ {avg_buy_price:.3f}€/kWh | '
+              f'Sell: {total_selling_time:.1f}h ({total_energy_sold:.0f}kWh) @ {avg_sell_price:.3f}€/kWh')
     plt.legend(loc='upper right', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(x_ticks, x_labels)

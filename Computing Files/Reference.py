@@ -177,5 +177,9 @@ data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(7)]
 output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Output Files')
 os.makedirs(output_dir, exist_ok=True)
 data['plot_suffix'] = '_Reference'
+
+# Add grid import/export data to data dictionary for arbitrage visualization (zeros for reference case)
+data['grid_import_vals'] = P_grid_consumer_vals  # In reference case, all grid interaction is import
+data['grid_export_vals'] = P_PV_grid_vals  # In reference case, all grid interaction is export
 plots.plot_energy_flows(results, data, revenues, save_dir=output_dir)
 plots.plot_financials(revenues, data, save_dir=output_dir)

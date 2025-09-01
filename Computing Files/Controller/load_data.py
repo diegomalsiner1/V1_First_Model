@@ -40,7 +40,7 @@ def sanity_check(data):
     return True
 
 # Fetches grid prices from API, ITA file, or HPFC forecast, for HPFC set Base/Peak Price and normalisation mode
-def fetch_prices(start_dt, end_dt, price_source="HPFC", base_forecast=100.0, peak_forecast=120.0, normalisation="mean"):
+def fetch_prices(start_dt, end_dt, price_source="API", base_forecast=100.0, peak_forecast=120.0, normalisation="mean"):
     if price_source == "API":
         grid_buy_price_raw, grid_sell_price_raw = API_prices.fetch_prices()
     elif price_source == "HPFC":

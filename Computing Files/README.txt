@@ -1,5 +1,31 @@
 # README.txt
 
+Price source selection (IMPORTANT)
+----------------------------------
+You can choose which market price data the simulation uses. There are three modes:
+
+1) HPFC (forward curve)
+   - Pass price_source="HPFC" to load_data.load(...)
+   - Uses Prices/HPFC_prices_forecast.py with Base/Peak params (base_forecast, peak_forecast)
+
+2) API (ENTSO-E Transparency)
+   - Pass price_source="API"
+   - Uses Prices/API_prices.py
+
+3) ITA (matrix CSV in Input Data Files)
+   - Any other value falls back to ITA matrix prices
+   - Recommended: price_source="Prices_ITA"
+   - Uses Prices/Prices_ITA.py and Input Data Files/Price_Matrix.csv
+
+Where to change it:
+- main_Optimization.py: data = load_data.load(reference_case=False, price_source="HPFC", ...)
+- Reference.py:        data = load_data.load(reference_case=True,  price_source="HPFC", ...)
+
+Notes:
+- HPFC expands hourly prices to 15-min steps and requires exactly 168 hourly points for a 7-day window.
+- ITA mode reads Price_Matrix.csv and maps the month from Constants_Plant.csv (PERIOD_START/PERIOD_END).
+- If you set price_source="API" or "HPFC" it will use those; otherwise it defaults to ITA.
+
 Energy System Optimization Project - Computing Files
 ===================================================
 
@@ -48,6 +74,4 @@ Switching Price Source
 ----------------------
 - In `load_data.py`, comment/uncomment the relevant lines to use either API or ITA price data.
 
-Support
--------
-For questions or issues, contact us.
+

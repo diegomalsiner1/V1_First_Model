@@ -99,58 +99,58 @@ def plot_financials(revenues, data, save_dir=None):
         x_labels = data['day_labels'] + [data['day_labels'][-1] + ' End']  # 8 labels for 8 ticks
     else:
         x_labels = [str(d) for d in range(len(x_ticks))]
-    # Subplot 1: Market Prices with Arbitrage Visualization
+    # Subplot 1: Market Prices with per-timestep buy/sell coloring
     plt.subplot(3, 1, 1)
-    
-    # Get grid import/export data for arbitrage visualization
-    grid_import = data.get('grid_import_vals', np.zeros_like(data['time_steps']))
-    grid_export = data.get('grid_export_vals', np.zeros_like(data['time_steps']))
-    
-    # Create background shading for arbitrage periods
-    # Find periods where we're buying from grid (positive import)
-    buying_periods = grid_import > 0.01  # Small threshold to avoid numerical noise
-    selling_periods = grid_export > 0.01  # Small threshold to avoid numerical noise
-    
-    # Create shaded areas for arbitrage visualization
-    if np.any(buying_periods):
-        plt.fill_between(data['time_steps'], 0, np.max(data['grid_buy_price']) * 1.1, 
-                        where=buying_periods, alpha=0.3, color='red', 
-                        label='Buying from Grid', interpolate=True)
-    
-    if np.any(selling_periods):
-        plt.fill_between(data['time_steps'], 0, np.max(data['grid_sell_price']) * 1.1, 
-                        where=selling_periods, alpha=0.3, color='green', 
-                        label='Selling to Grid', interpolate=True)
-    
-    # Plot price lines on top of the background
-    plt.plot(data['time_steps'], data['grid_buy_price'], label='Grid Buy Price (Euro/kWh)', color='blue', linewidth=2)
-    plt.plot(data['time_steps'], data['grid_sell_price'], label='Grid Sell Price (Euro/kWh)', color='lightblue', linestyle='--', linewidth=2)
+    # Get per-step import/export
+    grid_import = np.asarray(data.get('grid_import_vals', np.zeros_like(data['time_steps'])))
+    grid_export = np.asarray(data.get('grid_export_vals', np.zeros_like(data['time_steps'])))
+
+    # Build robust buy/sell masks (avoid numerical noise and enforce exclusivity)
+    thr = max(1e-3, 1e-4 * (np.max(np.abs(grid_import) + np.abs(grid_export)) + 1.0))
+    buy_mask = (grid_import > thr) & (grid_import > grid_export + thr)
+    sell_mask = (grid_export > thr) & (grid_export >= grid_import - thr)
+
+    # Color each timestep: green when buying, red when selling
+    ts = np.asarray(data['time_steps'])
+    dt = float(data.get('delta_t', 0.25))
+    for i in range(len(ts)):
+        x0 = ts[i]
+        x1 = x0 + dt
+        if sell_mask[i]:
+            plt.axvspan(x0, x1, color='red', alpha=0.18, linewidth=0, zorder=0)
+        elif buy_mask[i]:
+            plt.axvspan(x0, x1, color='green', alpha=0.18, linewidth=0, zorder=0)
+
+    # Plot price lines on top
+    plt.plot(data['time_steps'], data['grid_buy_price'], label='Grid Buy Price (Euro/kWh)', color='blue', linewidth=2, zorder=2)
+    plt.plot(data['time_steps'], data['grid_sell_price'], label='Grid Sell Price (Euro/kWh)', color='lightblue', linestyle='--', linewidth=2, zorder=2)
     plt.plot(data['time_steps'], np.full(data['n_steps'], data['lcoe_pv']), label='PV LCOE (Euro/kWh)', color='orange', linestyle='--', linewidth=1)
     plt.plot(data['time_steps'], np.full(data['n_steps'], data['lcoe_bess']), label='BESS LCOE (Euro/kWh)', color='green', linestyle='--', linewidth=1)
     
     # Calculate and display arbitrage statistics
+    buying_periods = grid_import > 1e-6
+    selling_periods = grid_export > 1e-6
     total_buying_time = np.sum(buying_periods) * data['delta_t']  # hours
     total_selling_time = np.sum(selling_periods) * data['delta_t']  # hours
     total_energy_bought = np.sum(grid_import) * data['delta_t']  # kWh
     total_energy_sold = np.sum(grid_export) * data['delta_t']  # kWh
-    
-    # Calculate average prices during arbitrage periods
-    if np.any(buying_periods):
-        avg_buy_price = np.mean(data['grid_buy_price'][buying_periods])
-    else:
-        avg_buy_price = 0
-        
-    if np.any(selling_periods):
-        avg_sell_price = np.mean(data['grid_sell_price'][selling_periods])
-    else:
-        avg_sell_price = 0
+    avg_buy_price = float(np.mean(np.array(data['grid_buy_price'])[buying_periods])) if np.any(buying_periods) else 0
+    avg_sell_price = float(np.mean(np.array(data['grid_sell_price'])[selling_periods])) if np.any(selling_periods) else 0
     
     plt.xlabel('Time (h)')
     plt.ylabel('Price (Euro/kWh)')
     plt.title(f'Energy Market Price {data.get("price_source")} - Arbitrage Visualization\n'
               f'{data["period_str"]} | Buy: {total_buying_time:.1f}h ({total_energy_bought:.0f}kWh) @ {avg_buy_price:.3f}€/kWh | '
               f'Sell: {total_selling_time:.1f}h ({total_energy_sold:.0f}kWh) @ {avg_sell_price:.3f}€/kWh')
-    plt.legend(loc='upper right', fontsize=9)
+    # Add legend entries for coloring
+    from matplotlib.patches import Patch
+    legend_handles = [
+        Patch(facecolor='green', alpha=0.1, label='Buying from Grid'),
+        Patch(facecolor='red', alpha=0.1, label='Selling to Grid')
+    ]
+    price_lines = plt.legend(loc='upper right', fontsize=9)
+    plt.gca().add_artist(price_lines)
+    plt.legend(handles=legend_handles, loc='upper left', fontsize=9)
     plt.grid(True, linestyle=':', linewidth=0.7)
     plt.xticks(x_ticks, x_labels)
     for d in range(1, len(x_ticks)):
@@ -192,13 +192,14 @@ def plot_financials(revenues, data, save_dir=None):
     ax2.legend(loc='upper right', fontsize=9)
     plt.subplots_adjust(hspace=0.35, top=0.95, bottom=0.06, left=0.07, right=0.97)
     plt.tight_layout(pad=1.5)
-    # Always save to Output Files in the V1_First_Model folder
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # V1_First_Model
-    output_dir = os.path.join(base_dir, 'Output Files')
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # Save plot - honor provided save_dir if given, otherwise default to Output Files
+    if save_dir is None:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        save_dir = os.path.join(base_dir, 'Output Files')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     suffix = data.get('plot_suffix', '')
-    save_path = os.path.join(output_dir, f'Financials{suffix}.png')
-    print(f"Saving financials plot to: {save_path}")  # Debug print
+    save_path = os.path.join(save_dir, f'Financials{suffix}.png')
+    print(f"Saving financials plot to: {save_path}")
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close()

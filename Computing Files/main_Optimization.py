@@ -3,6 +3,7 @@
 
 import time
 from Controller.mpc import MPC
+from Controller.arbitrage_controller import ArbitrageController
 from Controller.load_data import load_constants
 import Controller.load_data as load_data
 import numpy as np
@@ -51,9 +52,19 @@ assert len(data['ev_demand']) == data['n_steps']
 assert len(data['grid_buy_price']) == data['n_steps']
 assert len(data['grid_sell_price']) == data['n_steps']
 
-# MPC Parameters
+# Controller selection
 horizon = 672  # Forecast horizon: 7 days (15-min steps)
-mpc_controller = MPC(delta_t=data['delta_t'])
+controller_type = str(load_data.load_constants().get('CONTROLLER_TYPE', 'MPC')).upper()
+if controller_type == 'ARBITRAGE':
+    mpc_controller = ArbitrageController(
+        delta_t=data['delta_t'],
+        bess_capacity=data['bess_capacity'],
+        bess_power_limit=data['bess_power_limit'],
+        eta_charge=data['eta_charge'],
+        eta_discharge=data['eta_discharge']
+    )
+else:
+    mpc_controller = MPC(delta_t=data['delta_t'])
 
 # Initialize arrays for storing results
 n_steps = data['n_steps']

@@ -54,14 +54,35 @@ assert len(data['grid_sell_price']) == data['n_steps']
 
 # Controller selection
 horizon = 672  # Forecast horizon: 7 days (15-min steps)
-controller_type = str(load_data.load_constants().get('CONTROLLER_TYPE', 'MPC')).upper()
+controller_type = str(load_data.load_constants().get('CONTROLLER_TYPE', 'ARBITRAGE')).upper()  #MPC or ARBITRAGE
 if controller_type == 'ARBITRAGE':
+    _const = load_data.load_constants()
+    # Optional tunables for arbitrage controller (fall back to defaults if missing)
+    window_hours = float(_const.get('ARBI_WINDOW_HOURS', 24.0))
+    gap_min = float(_const.get('ARBI_GAP_MIN', 0.0))
+    alpha_soc_charge = float(_const.get('ARBI_ALPHA_SOC_CHARGE', 0.0))
+    beta_soc_discharge = float(_const.get('ARBI_BETA_SOC_DISCHARGE', 0.0))
+    gamma_pv_inflow = float(_const.get('ARBI_GAMMA_PV_INFLOW', 0.0))
+    hold_steps = int(float(_const.get('ARBI_HOLD_STEPS', 0)))
+    term_soc_raw = _const.get('ARBI_TERMINAL_SOC_RATIO', None)
+    try:
+        terminal_soc_ratio = None if term_soc_raw is None else float(term_soc_raw)
+    except Exception:
+        terminal_soc_ratio = None
+
     mpc_controller = ArbitrageController(
         delta_t=data['delta_t'],
         bess_capacity=data['bess_capacity'],
         bess_power_limit=data['bess_power_limit'],
         eta_charge=data['eta_charge'],
-        eta_discharge=data['eta_discharge']
+        eta_discharge=data['eta_discharge'],
+        window_hours=window_hours,
+        gap_min=gap_min,
+        alpha_soc_charge=alpha_soc_charge,
+        beta_soc_discharge=beta_soc_discharge,
+        gamma_pv_inflow=gamma_pv_inflow,
+        hold_steps=hold_steps,
+        terminal_soc_ratio=terminal_soc_ratio
     )
 else:
     mpc_controller = MPC(delta_t=data['delta_t'])

@@ -142,11 +142,25 @@ for t in range(n_steps):
     soc_actual[t + 1] = control['SOC_next']
     P_PV_gen[t] = control['P_PV_gen']
     
+
 # MPC loop completed
 mpc_complete_time = time.time()
 print(f"MPC optimization completed in {mpc_complete_time - data_load_time:.2f} seconds")
 print(f"Average time per timestep: {(mpc_complete_time - data_load_time)/n_steps:.3f} seconds")
-    
+
+# --- DEBUG: Print first 48 values of key arrays for inspection ---
+print("\n--- DEBUG: First 48 values of key dispatch/result arrays ---")
+print("P_PV_consumer_vals:", P_PV_consumer_vals[:48])
+print("P_BESS_charge_vals:", P_BESS_charge_vals[:48])
+print("P_BESS_discharge_vals:", P_BESS_discharge_vals[:48])
+print("P_grid_consumer_vals:", P_grid_consumer_vals[:48])
+print("P_grid_import_vals:", P_grid_import_vals[:48])
+print("SOC_vals:", soc_actual[:49])  # 49 to show initial + 48 steps
+print("P_PV_gen:", P_PV_gen[:48])
+print("P_PV_grid_vals:", P_PV_grid_vals[:48])
+print("P_Grid_to_BESS_vals:", P_Grid_to_BESS_vals[:48])
+print("----------------------------------------------------------\n")
+
 # Compile results for post-processing and plotting
 results = {
     'P_PV_consumer_vals': P_PV_consumer_vals,

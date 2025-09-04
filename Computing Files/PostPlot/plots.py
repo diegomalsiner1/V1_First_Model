@@ -128,15 +128,17 @@ def plot_financials(revenues, data, save_dir=None):
     plt.plot(data['time_steps'], np.full(data['n_steps'], data['lcoe_pv']), label='PV LCOE (Euro/kWh)', color='orange', linestyle='--', linewidth=1)
     plt.plot(data['time_steps'], np.full(data['n_steps'], data['lcoe_bess']), label='BESS LCOE (Euro/kWh)', color='green', linestyle='--', linewidth=1)
     
-    # Calculate and display arbitrage statistics
+    # Calculate and display arbitrage statistics (BESS-specific Grid↔BESS exchanges)
+    grid_import = bess_grid_import
+    grid_export = bess_grid_export
     buying_periods = grid_import > 1e-6
     selling_periods = grid_export > 1e-6
     total_buying_time = np.sum(buying_periods) * data['delta_t']  # hours
     total_selling_time = np.sum(selling_periods) * data['delta_t']  # hours
-    total_energy_bought = np.sum(grid_import) * data['delta_t']  # kWh
-    total_energy_sold = np.sum(grid_export) * data['delta_t']  # kWh
-    avg_buy_price = float(np.mean(np.array(data['grid_buy_price'])[buying_periods])) if np.any(buying_periods) else 0
-    avg_sell_price = float(np.mean(np.array(data['grid_sell_price'])[selling_periods])) if np.any(selling_periods) else 0
+    total_energy_bought = float(np.sum(grid_import) * data['delta_t'])  # kWh
+    total_energy_sold = float(np.sum(grid_export) * data['delta_t'])  # kWh
+    avg_buy_price = float(np.mean(np.array(data['grid_buy_price'])[buying_periods])) if np.any(buying_periods) else 0.0
+    avg_sell_price = float(np.mean(np.array(data['grid_sell_price'])[selling_periods])) if np.any(selling_periods) else 0.0
     
     plt.xlabel('Time (h)')
     plt.ylabel('Price (Euro/kWh)')

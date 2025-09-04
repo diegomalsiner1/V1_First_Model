@@ -30,65 +30,105 @@ class MPC:
         # Damper coefficient (€/kW-change) for smoothing power transitions (from constants; default 0.001 if missing)
         self.damper_coefficient = params.get('DAMPER_COEFFICIENT')
 
+        # Reusable network handle (lazy-initialized on first predict)
+        self._n = None
+        # Cache current nominal limits for quick updates
+        self._pv_nom = None
+        self._grid_imp_nom = None
+        self._grid_exp_nom = None
+
+    def _ensure_network(self, pv_nom, max_grid_import, max_grid_export):
+        # Create or update a reusable PyPSA network with fixed topology
+        if self._n is None:
+            n = pypsa.Network()
+            # Minimal snapshot to initialize; will be reset per predict()
+            n.set_snapshots(pd.date_range("2000-01-01", periods=1, freq=f"{int(self.delta_t*60)}min"))
+
+            n.snapshot_weightings.objective = self.delta_t
+            n.snapshot_weightings.generators = self.delta_t
+            n.snapshot_weightings.stores = self.delta_t
+
+            # Carriers
+            if "AC" not in getattr(n, "carriers", pd.DataFrame(index=[])).index:
+                n.add("Carrier", "AC")
+            if "DC" not in getattr(n, "carriers", pd.DataFrame(index=[])).index:
+                n.add("Carrier", "DC")
+
+            # Buses
+            n.add("Bus", "AC", carrier='AC')
+            n.add("Bus", "PV", carrier='DC')
+            n.add("Bus", "Grid", carrier='AC')
+            n.add("Bus", "BESS", carrier='DC')
+
+            # PV
+            n.add("Generator", "PV", bus="PV", p_nom=max(1.0, pv_nom), marginal_cost=0)
+
+            # BESS
+            if self.bess_power_limit > 0 and self.bess_capacity > 0:
+                n.add("StorageUnit", "BESS", bus="BESS",
+                      p_nom=self.bess_power_limit,
+                      max_hours=self.bess_capacity/self.bess_power_limit,
+                      efficiency_store=self.eta_charge,
+                      efficiency_dispatch=self.eta_discharge,
+                      marginal_cost=0,
+                      state_of_charge_initial=self.soc_initial)
+
+            # Links
+            n.add("Link", "AC_to_BESS", bus0="AC", bus1="BESS", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0, carrier='AC')
+            n.add("Link", "BESS_to_AC", bus0="BESS", bus1="AC", p_nom=self.bess_power_limit, efficiency=self.eta_discharge, marginal_cost=0, carrier='AC')
+            n.add("Link", "PV_to_AC", bus0="PV", bus1="AC", p_nom=max(1.0, pv_nom), efficiency=self.converter_efficiency, marginal_cost=0, carrier='AC')
+
+            # Grid IO
+            n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=max_grid_import, efficiency=1.0, marginal_cost=0, carrier='AC')
+            n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=max_grid_export, efficiency=1.0, marginal_cost=0, carrier='AC')
+
+            # Grid source and loads
+            n.add("Generator", "Grid_Source", bus="Grid", p_nom=1e9, marginal_cost=0)
+            n.add("Load", "Consumer", bus="AC", p_set=0, marginal_cost=0)
+            n.add("Load", "EV", bus="AC", p_set=0, marginal_cost=0)
+
+            self._n = n
+        else:
+            n = self._n
+            # Update p_nom where needed to avoid recreating components
+            if pv_nom != self._pv_nom:
+                n.generators.at["PV", "p_nom"] = max(1.0, pv_nom)
+                n.links.at["PV_to_AC", "p_nom"] = max(1.0, pv_nom)
+            if max_grid_import != self._grid_imp_nom:
+                n.links.at["Grid_Import", "p_nom"] = max_grid_import
+            if max_grid_export != self._grid_exp_nom:
+                n.links.at["Grid_Export", "p_nom"] = max_grid_export
+
+        # Update cached values
+        self._pv_nom = pv_nom
+        self._grid_imp_nom = max_grid_import
+        self._grid_exp_nom = max_grid_export
+        return self._n
+
 
     def predict(self, soc, pv_forecast, demand_forecast, ev_forecast, buy_forecast, sell_forecast, lcoe_pv, pi_ev, pi_consumer, horizon, start_dt):
         # Use actual simulation start date for snapshots
         snapshots = pd.date_range(start_dt, periods=horizon, freq=f'{int(self.delta_t*60)}min')
-        n = pypsa.Network()
-        n.set_snapshots(snapshots)
 
+        # Compute nominal values for this horizon
+        pv_nom = float(np.max(pv_forecast)) if np.max(pv_forecast) > 0 else 1.0
+        max_grid_import = float(np.max(demand_forecast) + np.max(ev_forecast) + self.bess_power_limit)
+        max_grid_export = float(np.max(pv_forecast) + self.bess_power_limit)
+        if max_grid_import < float(np.max(demand_forecast) + np.max(ev_forecast)):
+            max_grid_import = float(np.max(demand_forecast) + np.max(ev_forecast) + 100)
+
+        # Ensure/reuse network and update p_nom as needed
+        n = self._ensure_network(pv_nom, max_grid_import, max_grid_export)
+
+        # Reset snapshots and weights for this horizon
+        n.set_snapshots(snapshots)
         n.snapshot_weightings.objective = self.delta_t
         n.snapshot_weightings.generators = self.delta_t
         n.snapshot_weightings.stores = self.delta_t
 
-        # Define carriers explicitly to avoid warnings and for clarity
-        if "AC" not in getattr(n, "carriers", pd.DataFrame(index=[])).index:
-            n.add("Carrier", "AC")
-        if "DC" not in getattr(n, "carriers", pd.DataFrame(index=[])).index:
-            n.add("Carrier", "DC")
-
-        # Add buses (AC grid side; DC side split by PV and BESS buses)
-        n.add("Bus", "AC", carrier='AC')
-        n.add("Bus", "PV", carrier='DC')
-        n.add("Bus", "Grid", carrier='AC')
-        n.add("Bus", "BESS", carrier='DC')
-
-        # PV generator (PV bus) - allow curtailment via p_max_pu, prioritize by zero marginal cost
-        pv_nom = np.max(pv_forecast)
-        if pv_nom == 0:
-            pv_nom = 1
-        n.add("Generator", "PV", bus="PV", p_nom=pv_nom, marginal_cost=0)
-        n.generators_t.p_max_pu.loc[:, "PV"] = pd.Series(np.array(pv_forecast) / pv_nom, index=n.snapshots)
-
-        # BESS StorageUnit (BESS bus)
-        if self.bess_power_limit > 0 and self.bess_capacity > 0:
-            n.add("StorageUnit", "BESS", bus="BESS",
-                  p_nom=self.bess_power_limit,
-                  max_hours=self.bess_capacity/self.bess_power_limit,
-                  efficiency_store=self.eta_charge,
-                  efficiency_dispatch=self.eta_discharge,
-                  marginal_cost=0,
-                  state_of_charge_initial=soc)
-
-        # Links between buses
-        n.add("Link", "AC_to_BESS", bus0="AC", bus1="BESS", p_nom=self.bess_power_limit, efficiency=self.eta_charge, marginal_cost=0, carrier='AC')
-        n.add("Link", "BESS_to_AC", bus0="BESS", bus1="AC", p_nom=self.bess_power_limit, efficiency=self.eta_discharge, marginal_cost=0, carrier='AC')
-        n.add("Link", "PV_to_AC", bus0="PV", bus1="AC", p_nom=pv_nom, efficiency=self.converter_efficiency, marginal_cost=0, carrier='AC')
-
-        # Grid import/export as Links
-        max_grid_import = np.max(demand_forecast) + np.max(ev_forecast) + self.bess_power_limit
-        max_grid_export = np.max(pv_forecast) + self.bess_power_limit
-        # Ensure grid import capacity is sufficient even when PV is zero
-        if max_grid_import < np.max(demand_forecast) + np.max(ev_forecast):
-            max_grid_import = np.max(demand_forecast) + np.max(ev_forecast) + 100  # Add buffer
-        # Grid import/export links
-        n.add("Link", "Grid_Import", bus0="Grid", bus1="AC", p_nom=max_grid_import, efficiency=1.0, marginal_cost=0, carrier='AC')
-        n.add("Link", "Grid_Export", bus0="AC", bus1="Grid", p_nom=max_grid_export, efficiency=1.0, marginal_cost=0, carrier='AC')
-        # Selling to grid yields revenue (negative cost)
+        # Time-series updates
+        n.generators_t.p_max_pu.loc[:, "PV"] = pd.Series(np.array(pv_forecast) / max(1.0, pv_nom), index=n.snapshots)
         n.links_t.marginal_cost["Grid_Export"] = -pd.Series(sell_forecast, index=n.snapshots)
-
-        # Grid source generator (buy from grid at buy_forecast)
-        n.add("Generator", "Grid_Source", bus="Grid", p_nom=1e9, marginal_cost=0)
         n.generators_t.marginal_cost["Grid_Source"] = pd.Series(buy_forecast, index=n.snapshots)
 
         # --- DEBUG: Print key marginal costs and link parameters ---
@@ -105,11 +145,13 @@ class MPC:
         except Exception as e:
             print(f"DEBUG print error: {e}")
 
-        # Loads: keep Consumer and EV on AC side (EV chargers are typically AC-coupled externally)
-        n.add("Load", "Consumer", bus="AC", p_set=0, marginal_cost=0)
-        n.add("Load", "EV", bus="AC", p_set=0, marginal_cost=0)
+        # Loads: update time series
         n.loads_t.p_set.loc[:, "Consumer"] = demand_forecast
         n.loads_t.p_set.loc[:, "EV"] = ev_forecast
+
+        # Update initial SOC for this window
+        if "BESS" in n.storage_units.index:
+            n.storage_units.at["BESS", "state_of_charge_initial"] = soc
 
         # No manual constraints/damping: rely on PyPSA standard LP and costs
 

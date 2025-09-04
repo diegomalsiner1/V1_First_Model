@@ -155,7 +155,7 @@ class MPC:
 
         # No manual constraints/damping: rely on PyPSA standard LP and costs
 
-        # Build model and add MILP mutual exclusivity for grid import/export
+        # Build model (or rebuild with updated time series) and add MILP mutual exclusivity for grid import/export
         n.optimize.create_model()
         try:
             m = n.model
@@ -173,6 +173,9 @@ class MPC:
                 bigM_exp = float(n.links.loc["Grid_Export", "p_nom"]) if "Grid_Export" in n.links.index else 0.0
 
                 # Vectorized constraints over all snapshots (aligns on 'snapshots' coordinate)
+                # Enforce non-negativity and big-M upper bounds
+                m.add_constraints(grid_imp_p >= 0)
+                m.add_constraints(grid_exp_p >= 0)
                 m.add_constraints(grid_imp_p <= bigM_imp * z_imp)
                 m.add_constraints(grid_exp_p <= bigM_exp * z_exp)
                 m.add_constraints(z_imp + z_exp <= 1)

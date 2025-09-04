@@ -9,6 +9,7 @@ from Controller.arbitrage_controller import ArbitrageController
 import PostPlot.post_process as post_process
 import PostPlot.plots as plots
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
 
 def pad_to_horizon(arr, horizon):
@@ -145,7 +146,7 @@ def compute_kpis(results, revenues, data):
 def plot_comparison(data, res_mpc, rev_mpc, res_arb, rev_arb, save_dir):
     os.makedirs(save_dir, exist_ok=True)
     t = data['time_steps']
-    fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=True)
+    fig, axes = plt.subplots(4, 1, figsize=(14, 16), sharex=True)
 
     # 1) Cumulative revenue
     cum_mpc = np.cumsum(rev_mpc['total_net_per_step'])
@@ -173,10 +174,64 @@ def plot_comparison(data, res_mpc, rev_mpc, res_arb, rev_arb, save_dir):
     axes[2].plot(t, res_arb['P_grid_import_vals'], label='ARB grid import', color='tab:green', linestyle='--', alpha=0.6)
     axes[2].plot(t, res_arb['P_grid_export_vals'], label='ARB grid export', color='tab:red', linestyle='--', alpha=0.6)
     axes[2].set_title('Grid Import/Export')
-    axes[2].set_xlabel('Time (h)')
     axes[2].set_ylabel('kW')
     axes[2].grid(True, linestyle=':')
     axes[2].legend(ncol=2)
+
+    # 4) Price with total buy/sell shading (overall import/export across the site)
+    ax = axes[3]
+    buy_price = np.asarray(data['grid_buy_price'])
+    sell_price = np.asarray(data['grid_sell_price'])
+    ax.plot(t, buy_price, label='Grid Buy Price (€/kWh)', color='blue', linewidth=2, zorder=3)
+    ax.plot(t, sell_price, label='Grid Sell Price (€/kWh)', color='lightblue', linestyle='--', linewidth=2, zorder=3)
+
+    # Use link-based totals for overall site import/export
+    imp_mpc = np.asarray(res_mpc['P_grid_import_vals'])
+    exp_mpc = np.asarray(res_mpc['P_grid_export_vals'])
+    imp_arb = np.asarray(res_arb['P_grid_import_vals'])
+    exp_arb = np.asarray(res_arb['P_grid_export_vals'])
+    tol = 1e-6
+    # Normalize alpha by max magnitude across both controllers
+    max_imp = float(max(1e-9, np.max([np.max(imp_mpc), np.max(imp_arb)])))
+    max_exp = float(max(1e-9, np.max([np.max(exp_mpc), np.max(exp_arb)])))
+    dt = float(data.get('delta_t', 0.25))
+
+    # Shade for MPC (darker hues)
+    for i in range(len(t)):
+        x0 = t[i]
+        x1 = x0 + dt
+        if imp_mpc[i] > tol:
+            alpha = 0.4 * (imp_mpc[i] / max_imp)
+            ax.axvspan(x0, x1, color='forestgreen', alpha=alpha, linewidth=0, zorder=0)
+        elif exp_mpc[i] > tol:
+            alpha = 0.4 * (exp_mpc[i] / max_exp)
+            ax.axvspan(x0, x1, color='firebrick', alpha=alpha, linewidth=0, zorder=0)
+
+    # Shade for ARBITRAGE (lighter hues)
+    for i in range(len(t)):
+        x0 = t[i]
+        x1 = x0 + dt
+        if imp_arb[i] > tol:
+            alpha = 0.3 * (imp_arb[i] / max_imp)
+            ax.axvspan(x0, x1, color='limegreen', alpha=alpha, linewidth=0, zorder=1)
+        elif exp_arb[i] > tol:
+            alpha = 0.3 * (exp_arb[i] / max_exp)
+            ax.axvspan(x0, x1, color='salmon', alpha=alpha, linewidth=0, zorder=1)
+
+    ax.set_title('Market Price with Total Grid Buy/Sell Shading (Intensity ∝ Power)')
+    ax.set_xlabel('Time (h)')
+    ax.set_ylabel('€/kWh')
+    ax.grid(True, linestyle=':')
+    # Legend patches explaining shading
+    shade_legend = [
+        Patch(facecolor='forestgreen', alpha=0.4, label='MPC: Import (darker=more kW)'),
+        Patch(facecolor='firebrick', alpha=0.4, label='MPC: Export (darker=more kW)'),
+        Patch(facecolor='limegreen', alpha=0.3, label='ARB: Import (darker=more kW)'),
+        Patch(facecolor='salmon', alpha=0.3, label='ARB: Export (darker=more kW)'),
+    ]
+    price_lines = ax.legend(loc='upper right', fontsize=9)
+    ax.add_artist(price_lines)
+    ax.legend(handles=shade_legend, loc='upper left', fontsize=9)
 
     plt.tight_layout()
     out_path = os.path.join(save_dir, 'Comparison_MPC_vs_Arbitrage.png')

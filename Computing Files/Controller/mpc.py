@@ -117,22 +117,23 @@ class MPC:
         n.optimize.create_model()
         try:
             m = n.model
-            # Access link power variables for import/export
+            # Access link power variables for import/export (vector over snapshots)
             link_p = m["Link-p"]
-            grid_imp_p = link_p["Grid_Import"] if "Grid_Import" in n.links.index else None
-            grid_exp_p = link_p["Grid_Export"] if "Grid_Export" in n.links.index else None
+            if "Grid_Import" in n.links.index and "Grid_Export" in n.links.index:
+                # Reduce the 'Link' dimension using .sel to keep only the 'snapshots' dimension
+                grid_imp_p = link_p.sel(Link="Grid_Import")
+                grid_exp_p = link_p.sel(Link="Grid_Export")
 
-            if grid_imp_p is not None and grid_exp_p is not None:
                 z_imp = m.add_variables(binary=True, name="z_grid_import", coords=[n.snapshots])
                 z_exp = m.add_variables(binary=True, name="z_grid_export", coords=[n.snapshots])
 
                 bigM_imp = float(n.links.loc["Grid_Import", "p_nom"]) if "Grid_Import" in n.links.index else 0.0
                 bigM_exp = float(n.links.loc["Grid_Export", "p_nom"]) if "Grid_Export" in n.links.index else 0.0
 
-                for snap in n.snapshots:
-                    m.add_constraints(grid_imp_p[snap] <= bigM_imp * z_imp[snap], name=f"grid_imp_limit_{snap}")
-                    m.add_constraints(grid_exp_p[snap] <= bigM_exp * z_exp[snap], name=f"grid_exp_limit_{snap}")
-                    m.add_constraints(z_imp[snap] + z_exp[snap] <= 1, name=f"grid_imp_exp_mutex_{snap}")
+                # Vectorized constraints over all snapshots (aligns on 'snapshots' coordinate)
+                m.add_constraints(grid_imp_p <= bigM_imp * z_imp)
+                m.add_constraints(grid_exp_p <= bigM_exp * z_exp)
+                m.add_constraints(z_imp + z_exp <= 1)
         except Exception as e:
             print(f"Warning: could not add MILP mutual exclusivity: {e}")
 

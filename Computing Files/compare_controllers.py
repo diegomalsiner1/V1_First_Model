@@ -88,9 +88,10 @@ def run_controller_once(data, controller_type, horizon=672):
             buy_forecast, sell_forecast, data['lcoe_pv'], data['pi_ev'], data['pi_consumer'], horizon, current_start_dt
         )
 
-        P_PV_consumer_vals[t] = control['pv_bess_to_consumer']
-        P_PV_ev_vals[t] = control['pv_bess_to_ev']
-        P_PV_grid_vals[t] = control['pv_bess_to_grid']
+        # Use separated flows if available; fallback to combined keys for older controllers
+        P_PV_consumer_vals[t] = control.get('pv_to_consumer', control.get('pv_bess_to_consumer', 0.0))
+        P_PV_ev_vals[t] = control.get('pv_to_ev', control.get('pv_bess_to_ev', 0.0))
+        P_PV_grid_vals[t] = control.get('pv_to_grid', control.get('pv_bess_to_grid', 0.0))
         P_BESS_discharge_vals[t] = control['P_BESS_discharge']
         P_BESS_charge_vals[t] = control['P_BESS_charge']
         P_grid_consumer_vals[t] = control['grid_to_consumer']
@@ -114,6 +115,10 @@ def run_controller_once(data, controller_type, horizon=672):
         'P_grid_export_vals': P_grid_export_vals,
         'SOC_vals': soc_actual,
         'P_PV_gen': P_PV_gen,
+        # Include separated BESS contributions when available for consistent post-processing
+        'P_BESS_consumer_vals': np.zeros_like(P_PV_gen),
+        'P_BESS_ev_vals': np.zeros_like(P_PV_gen),
+        'P_BESS_grid_vals': np.zeros_like(P_PV_gen),
     }
 
     revenues = post_process.compute_revenues(results, data)
@@ -168,11 +173,11 @@ def plot_comparison(data, res_mpc, rev_mpc, res_arb, rev_arb, save_dir):
     axes[1].grid(True, linestyle=':')
     axes[1].legend(ncol=2)
 
-    # 3) Grid import/export overlay
-    axes[2].plot(t, res_mpc['P_grid_import_vals'], label='MPC grid import', color='tab:green', alpha=0.6)
-    axes[2].plot(t, res_mpc['P_grid_export_vals'], label='MPC grid export', color='tab:red', alpha=0.6)
-    axes[2].plot(t, res_arb['P_grid_import_vals'], label='ARB grid import', color='tab:green', linestyle='--', alpha=0.6)
-    axes[2].plot(t, res_arb['P_grid_export_vals'], label='ARB grid export', color='tab:red', linestyle='--', alpha=0.6)
+    # 3) Grid import/export overlay (MPC: blue hues, ARBITRAGE: orange hues)
+    axes[2].plot(t, res_mpc['P_grid_import_vals'], label='MPC grid import', color='tab:blue', alpha=0.8)
+    axes[2].plot(t, res_mpc['P_grid_export_vals'], label='MPC grid export', color='deepskyblue', alpha=0.8)
+    axes[2].plot(t, res_arb['P_grid_import_vals'], label='ARB grid import', color='darkorange', linestyle='--', alpha=0.9)
+    axes[2].plot(t, res_arb['P_grid_export_vals'], label='ARB grid export', color='gold', linestyle='--', alpha=0.9)
     axes[2].set_title('Grid Import/Export')
     axes[2].set_ylabel('kW')
     axes[2].grid(True, linestyle=':')
@@ -196,27 +201,27 @@ def plot_comparison(data, res_mpc, rev_mpc, res_arb, rev_arb, save_dir):
     max_exp = float(max(1e-9, np.max([np.max(exp_mpc), np.max(exp_arb)])))
     dt = float(data.get('delta_t', 0.25))
 
-    # Shade for MPC (darker hues)
+    # Shade for MPC (blue hues)
     for i in range(len(t)):
         x0 = t[i]
         x1 = x0 + dt
         if imp_mpc[i] > tol:
-            alpha = 0.4 * (imp_mpc[i] / max_imp)
-            ax.axvspan(x0, x1, color='forestgreen', alpha=alpha, linewidth=0, zorder=0)
+            alpha = 0.45 * (imp_mpc[i] / max_imp)
+            ax.axvspan(x0, x1, color='royalblue', alpha=alpha, linewidth=0, zorder=0)
         elif exp_mpc[i] > tol:
-            alpha = 0.4 * (exp_mpc[i] / max_exp)
-            ax.axvspan(x0, x1, color='firebrick', alpha=alpha, linewidth=0, zorder=0)
+            alpha = 0.45 * (exp_mpc[i] / max_exp)
+            ax.axvspan(x0, x1, color='lightskyblue', alpha=alpha, linewidth=0, zorder=0)
 
-    # Shade for ARBITRAGE (lighter hues)
+    # Shade for ARBITRAGE (orange hues)
     for i in range(len(t)):
         x0 = t[i]
         x1 = x0 + dt
         if imp_arb[i] > tol:
-            alpha = 0.3 * (imp_arb[i] / max_imp)
-            ax.axvspan(x0, x1, color='limegreen', alpha=alpha, linewidth=0, zorder=1)
+            alpha = 0.35 * (imp_arb[i] / max_imp)
+            ax.axvspan(x0, x1, color='darkorange', alpha=alpha, linewidth=0, zorder=1)
         elif exp_arb[i] > tol:
-            alpha = 0.3 * (exp_arb[i] / max_exp)
-            ax.axvspan(x0, x1, color='salmon', alpha=alpha, linewidth=0, zorder=1)
+            alpha = 0.35 * (exp_arb[i] / max_exp)
+            ax.axvspan(x0, x1, color='gold', alpha=alpha, linewidth=0, zorder=1)
 
     ax.set_title('Market Price with Total Grid Buy/Sell Shading (Intensity ∝ Power)')
     ax.set_xlabel('Time (h)')
@@ -224,10 +229,10 @@ def plot_comparison(data, res_mpc, rev_mpc, res_arb, rev_arb, save_dir):
     ax.grid(True, linestyle=':')
     # Legend patches explaining shading
     shade_legend = [
-        Patch(facecolor='forestgreen', alpha=0.4, label='MPC: Import (darker=more kW)'),
-        Patch(facecolor='firebrick', alpha=0.4, label='MPC: Export (darker=more kW)'),
-        Patch(facecolor='limegreen', alpha=0.3, label='ARB: Import (darker=more kW)'),
-        Patch(facecolor='salmon', alpha=0.3, label='ARB: Export (darker=more kW)'),
+        Patch(facecolor='royalblue', alpha=0.45, label='MPC: Import (darker=more kW)'),
+        Patch(facecolor='lightskyblue', alpha=0.45, label='MPC: Export (darker=more kW)'),
+        Patch(facecolor='darkorange', alpha=0.35, label='ARB: Import (darker=more kW)'),
+        Patch(facecolor='gold', alpha=0.35, label='ARB: Export (darker=more kW)'),
     ]
     price_lines = ax.legend(loc='upper right', fontsize=9)
     ax.add_artist(price_lines)

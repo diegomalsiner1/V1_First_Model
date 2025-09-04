@@ -205,6 +205,13 @@ class ArbitrageController:
             'P_link_dc_to_ac': pv_to_ac + bess_to_ac,
             'P_grid_import': grid_import,
             'P_grid_export': grid_export,
+            # Separated PV and BESS contributions (explicit zeros where not used)
+            'pv_to_consumer': pv_to_consumer,
+            'pv_to_ev': pv_to_ev,
+            'pv_to_grid': pv_to_grid,
+            'bess_to_consumer': 0.0,
+            'bess_to_ev': 0.0,
+            'bess_to_grid': bess_to_grid,
             'pv_bess_to_consumer': pv_bess_to_consumer,
             'pv_bess_to_ev': pv_bess_to_ev,
             'pv_bess_to_grid': pv_bess_to_grid,

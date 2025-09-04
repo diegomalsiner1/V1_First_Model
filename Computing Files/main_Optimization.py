@@ -54,7 +54,7 @@ assert len(data['grid_sell_price']) == data['n_steps']
 
 # Controller selection
 horizon = 672  # Forecast horizon: 7 days (15-min steps)
-controller_type = str(load_data.load_constants().get('CONTROLLER_TYPE', 'ARBITRAGE')).upper()  #MPC or ARBITRAGE
+controller_type = str(load_data.load_constants().get('CONTROLLER_TYPE', 'MPC')).upper()  #MPC or ARBITRAGE
 if controller_type == 'ARBITRAGE':
     _const = load_data.load_constants()
     # Optional tunables for arbitrage controller (fall back to defaults if missing)
@@ -129,9 +129,9 @@ for t in range(n_steps):
     )
 
     # Store results for each timestep
-    P_PV_consumer_vals[t] = control['pv_bess_to_consumer']
-    P_PV_ev_vals[t] = control['pv_bess_to_ev']
-    P_PV_grid_vals[t] = control['pv_bess_to_grid']
+    P_PV_consumer_vals[t] = control['pv_to_consumer']
+    P_PV_ev_vals[t] = control['pv_to_ev']
+    P_PV_grid_vals[t] = control['pv_to_grid']
     P_BESS_discharge_vals[t] = control['P_BESS_discharge']
     P_BESS_charge_vals[t] = control['P_BESS_charge']
     P_grid_consumer_vals[t] = control['grid_to_consumer']
@@ -270,9 +270,9 @@ output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Out
 os.makedirs(output_dir, exist_ok=True)
 data['plot_suffix'] = ''  # No suffix for main optimization
 
-# Add grid import/export data to data dictionary for arbitrage visualization
-data['grid_import_vals'] = P_grid_import_vals
-data['grid_export_vals'] = P_grid_export_vals
+# Add BESS↔Grid exchange arrays for coloring masks in financial plot (controller-agnostic)
+data['bess_grid_import_vals'] = results.get('P_grid_to_bess', np.zeros_like(P_grid_import_vals))
+data['bess_grid_export_vals'] = results.get('P_BESS_grid_vals', np.zeros_like(P_grid_export_vals))
 
 # Prepare day labels for plotting (for x-axis ticks)
 days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']

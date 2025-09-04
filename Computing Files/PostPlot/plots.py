@@ -99,16 +99,17 @@ def plot_financials(revenues, data, save_dir=None):
         x_labels = data['day_labels'] + [data['day_labels'][-1] + ' End']  # 8 labels for 8 ticks
     else:
         x_labels = [str(d) for d in range(len(x_ticks))]
-    # Subplot 1: Market Prices with per-timestep buy/sell coloring
+    # Subplot 1: Market Prices with per-timestep coloring based ONLY on BESS↔Grid exchange
     plt.subplot(3, 1, 1)
-    # Get per-step import/export
-    grid_import = np.asarray(data.get('grid_import_vals', np.zeros_like(data['time_steps'])))
-    grid_export = np.asarray(data.get('grid_export_vals', np.zeros_like(data['time_steps'])))
+    # Get per-step BESS-specific import/export (Grid→BESS and BESS→Grid)
+    bess_grid_import = np.asarray(data.get('bess_grid_import_vals', np.zeros_like(data['time_steps'])))
+    bess_grid_export = np.asarray(data.get('bess_grid_export_vals', np.zeros_like(data['time_steps'])))
 
     # Build robust buy/sell masks (avoid numerical noise and enforce exclusivity)
-    thr = max(1e-3, 1e-4 * (np.max(np.abs(grid_import) + np.abs(grid_export)) + 1.0))
-    buy_mask = (grid_import > thr) & (grid_import > grid_export + thr)
-    sell_mask = (grid_export > thr) & (grid_export >= grid_import - thr)
+    thr = max(1e-3, 1e-4 * (np.max(np.abs(bess_grid_import) + np.abs(bess_grid_export)) + 1.0))
+    # Green when BESS is buying from grid (Grid→BESS), Red when BESS is selling to grid (BESS→Grid)
+    buy_mask = bess_grid_import > thr
+    sell_mask = bess_grid_export > thr
 
     # Color each timestep: green when buying, red when selling
     ts = np.asarray(data['time_steps'])
@@ -142,11 +143,11 @@ def plot_financials(revenues, data, save_dir=None):
     plt.title(f'Energy Market Price {data.get("price_source")} - Arbitrage Visualization\n'
               f'{data["period_str"]} | Buy: {total_buying_time:.1f}h ({total_energy_bought:.0f}kWh) @ {avg_buy_price:.3f}€/kWh | '
               f'Sell: {total_selling_time:.1f}h ({total_energy_sold:.0f}kWh) @ {avg_sell_price:.3f}€/kWh')
-    # Add legend entries for coloring
+    # Add legend entries for coloring (BESS↔Grid only)
     from matplotlib.patches import Patch
     legend_handles = [
-        Patch(facecolor='green', alpha=0.1, label='Buying from Grid'),
-        Patch(facecolor='red', alpha=0.1, label='Selling to Grid')
+        Patch(facecolor='green', alpha=0.1, label='BESS buying from Grid'),
+        Patch(facecolor='red', alpha=0.1, label='BESS selling to Grid')
     ]
     price_lines = plt.legend(loc='upper right', fontsize=9)
     plt.gca().add_artist(price_lines)

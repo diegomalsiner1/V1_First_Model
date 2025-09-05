@@ -122,6 +122,9 @@ def run_controller_once(data, controller_type, horizon=672):
     }
 
     revenues = post_process.compute_revenues(results, data)
+    # Provide total grid import/export to plotting for coloring
+    data['total_grid_import_vals'] = results.get('P_grid_bought', P_grid_import_vals)
+    data['total_grid_export_vals'] = results.get('P_grid_sold', P_grid_export_vals)
     return results, revenues
 
 

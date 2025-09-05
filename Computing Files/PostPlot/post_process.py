@@ -71,32 +71,29 @@ def compute_revenues(results, data):
     results['P_bess_to_grid'] = bess_to_grid
     results['P_grid_to_bess_only'] = grid_to_bess
 
-    # Revenues (per-step arrays)
+    # Revenues (per-step arrays) — cash-effective only
     grid_buy_cost = calculated_import * data['grid_buy_price'] * data['delta_t']
     grid_sell_revenue = calculated_export * data['grid_sell_price'] * data['delta_t']
-    
-    # BESS charging costs
-    grid_to_bess_cost = grid_to_bess * data['grid_buy_price'] * data['delta_t']
-    bess_charging_efficiency_loss = grid_to_bess * (1 - data['eta_charge']) * data['grid_buy_price'] * data['delta_t']
-    
-    ev_rev = (pv_to_ev + bess_to_ev) * data['pi_ev'] * data['delta_t']
-    
-    # Net revenue calculation
-    total_net_per_step = grid_sell_revenue - grid_buy_cost + ev_rev - grid_to_bess_cost - bess_charging_efficiency_loss
+
+    # EV external revenue (fixed price per kWh charged) — includes all energy origins
+    ev_energy = pv_to_ev + bess_to_ev + grid_to_ev
+    ev_rev = ev_energy * data['pi_ev'] * data['delta_t']
+
+    # Net revenue: only cash-effective terms (no internal transfer prices, no damping/efficiency penalties)
+    total_net_per_step = grid_sell_revenue - grid_buy_cost + ev_rev
 
     revenues = {
         'grid_sell_revenue': grid_sell_revenue,
         'grid_buy_cost': grid_buy_cost,
-        'pv_to_consumer_rev': pv_to_cons * data['pi_consumer'] * data['delta_t'],
-        'bess_to_consumer_rev': bess_to_cons * data['pi_consumer'] * data['delta_t'],
+        'pv_to_consumer_rev': np.zeros_like(pv_to_cons),
+        'bess_to_consumer_rev': np.zeros_like(bess_to_cons),
         'pv_to_ev_rev': pv_to_ev * data['pi_ev'] * data['delta_t'],
         'bess_to_ev_rev': bess_to_ev * data['pi_ev'] * data['delta_t'],
+        'grid_to_ev_rev': grid_to_ev * data['pi_ev'] * data['delta_t'],
         'pv_to_grid_rev': pv_to_grid * data['grid_sell_price'] * data['delta_t'],
         'bess_to_grid_rev': bess_to_grid * data['grid_sell_price'] * data['delta_t'],
         'total_net_per_step': total_net_per_step,
-        'total_revenue': np.sum(total_net_per_step),
-        'bess_grid_charging_cost': grid_to_bess_cost,
-        'bess_efficiency_loss_cost': bess_charging_efficiency_loss
+        'total_revenue': np.sum(total_net_per_step)
     }
 
     # Self-sufficiency calculation
@@ -114,7 +111,18 @@ def compute_revenues(results, data):
     revenues['total_pv_to_ev_rev'] = np.sum(revenues['pv_to_ev_rev'])
     revenues['total_bess_to_grid_rev'] = np.sum(revenues['bess_to_grid_rev'])
     revenues['total_bess_to_ev_rev'] = np.sum(revenues['bess_to_ev_rev'])
+    revenues['total_grid_to_ev_rev'] = np.sum(revenues['grid_to_ev_rev'])
+    revenues['total_ev_rev'] = revenues['total_pv_to_ev_rev'] + revenues['total_bess_to_ev_rev']
     revenues['total_grid_buy_cost'] = np.sum(revenues['grid_buy_cost'])
+    revenues['total_grid_sell_revenue'] = np.sum(revenues['grid_sell_revenue'])
+    revenues['net_grid_revenue'] = revenues['total_grid_sell_revenue'] - revenues['total_grid_buy_cost']
+    # Per-asset totals for contributions
+    revenues['asset_totals'] = {
+        'PV': float(revenues['total_pv_to_grid_rev']),
+        'BESS': float(revenues['total_bess_to_grid_rev']),
+        'EV': float(revenues['total_ev_rev']),
+        'Grid': float(revenues['net_grid_revenue'])
+    }
     
     return revenues
 
@@ -130,11 +138,10 @@ def print_results(revenues, results, data):
     print(f"Total Revenue: Eur{revenues['total_revenue']:.2f}")
     print(f"Self-sufficiency ratio (consumer): {revenues['self_sufficiency']:.2f}%")
     print(f"Revenue from PV to Grid: Eur{revenues['total_pv_to_grid_rev']:.2f}")
-    print(f"Revenue from PV to EV: Eur{revenues['total_pv_to_ev_rev']:.2f}")
     print(f"Revenue from BESS to Grid: Eur{revenues['total_bess_to_grid_rev']:.2f}")
-    print(f"Revenue from BESS to EV: Eur{revenues['total_bess_to_ev_rev']:.2f}")
+    print(f"EV revenue (total): Eur{revenues['total_ev_rev']:.2f}")
     print(f"EV renewable share: {revenues['ev_renewable_share']:.2f}%")
-    print(f"BESS Grid Charging Cost: Eur{np.sum(revenues['bess_grid_charging_cost']):.2f}")
-    print(f"BESS Efficiency Loss Cost: Eur{np.sum(revenues['bess_efficiency_loss_cost']):.2f}")
+    print(f"Grid buy cost (total): Eur{revenues['total_grid_buy_cost']:.2f}")
+    print(f"Grid sell revenue (total): Eur{revenues['total_grid_sell_revenue']:.2f}")
     # Remove slack_vals check, as PyPSA always balances demand if feasible
     print("All demand met in every timestep (no slack variable used).")

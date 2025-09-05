@@ -89,9 +89,12 @@ def plot_energy_flows(results, data, revenues, save_dir=None):
 
 def plot_financials(revenues, data, save_dir=None):
     """
-    Plot financial results: prices, revenue streams, and cumulative revenue.
+    Plot simplified financials:
+      - Subplot 1: Market prices with per-step coloring based on TOTAL grid exchange (import/export)
+      - Subplot 2: Total cashflow per step and cumulative cashflow
+      - Additionally, a separate contributions bar chart figure for PV, BESS, EV, Grid totals
     """
-    plt.figure(figsize=(14, 12))
+    plt.figure(figsize=(14, 8))
     n_steps = len(data['time_steps'])
     max_time = np.max(data['time_steps']) + data['delta_t']
     x_ticks = np.arange(0, max_time + 0.01, 24)  # Ticks every 24 hours in hour units
@@ -99,17 +102,17 @@ def plot_financials(revenues, data, save_dir=None):
         x_labels = data['day_labels'] + [data['day_labels'][-1] + ' End']  # 8 labels for 8 ticks
     else:
         x_labels = [str(d) for d in range(len(x_ticks))]
-    # Subplot 1: Market Prices with per-timestep coloring based ONLY on BESS↔Grid exchange
-    plt.subplot(3, 1, 1)
-    # Get per-step BESS-specific import/export (Grid→BESS and BESS→Grid)
-    bess_grid_import = np.asarray(data.get('bess_grid_import_vals', np.zeros_like(data['time_steps'])))
-    bess_grid_export = np.asarray(data.get('bess_grid_export_vals', np.zeros_like(data['time_steps'])))
+    # Subplot 1: Market Prices with per-timestep coloring based on TOTAL Grid exchange
+    plt.subplot(2, 1, 1)
+    # Compute total grid import/export per step from results if present
+    total_grid_import = np.asarray(data.get('total_grid_import_vals', np.zeros_like(data['time_steps'])))
+    total_grid_export = np.asarray(data.get('total_grid_export_vals', np.zeros_like(data['time_steps'])))
 
     # Build robust buy/sell masks (avoid numerical noise and enforce exclusivity)
-    thr = max(1e-3, 1e-4 * (np.max(np.abs(bess_grid_import) + np.abs(bess_grid_export)) + 1.0))
-    # Green when BESS is buying from grid (Grid→BESS), Red when BESS is selling to grid (BESS→Grid)
-    buy_mask = bess_grid_import > thr
-    sell_mask = bess_grid_export > thr
+    thr = max(1e-3, 1e-4 * (np.max(np.abs(total_grid_import) + np.abs(total_grid_export)) + 1.0))
+    # Green when buying from grid, Red when selling to grid (TOTAL)
+    buy_mask = total_grid_import > thr
+    sell_mask = total_grid_export > thr
 
     # Color each timestep: green when buying, red when selling
     ts = np.asarray(data['time_steps'])
@@ -128,9 +131,9 @@ def plot_financials(revenues, data, save_dir=None):
     plt.plot(data['time_steps'], np.full(data['n_steps'], data['lcoe_pv']), label='PV LCOE (Euro/kWh)', color='orange', linestyle='--', linewidth=1)
     plt.plot(data['time_steps'], np.full(data['n_steps'], data['lcoe_bess']), label='BESS LCOE (Euro/kWh)', color='green', linestyle='--', linewidth=1)
     
-    # Calculate and display arbitrage statistics (BESS-specific Grid↔BESS exchanges)
-    grid_import = bess_grid_import
-    grid_export = bess_grid_export
+    # Calculate and display total grid arbitrage statistics
+    grid_import = total_grid_import
+    grid_export = total_grid_export
     buying_periods = grid_import > 1e-6
     selling_periods = grid_export > 1e-6
     total_buying_time = np.sum(buying_periods) * data['delta_t']  # hours
@@ -142,14 +145,14 @@ def plot_financials(revenues, data, save_dir=None):
     
     plt.xlabel('Time (h)')
     plt.ylabel('Price (Euro/kWh)')
-    plt.title(f'Energy Market Price {data.get("price_source")} - Arbitrage Visualization\n'
+    plt.title(f'Energy Market Price {data.get("price_source")} - Grid Exchange Visualization\n'
               f'{data["period_str"]} | Buy: {total_buying_time:.1f}h ({total_energy_bought:.0f}kWh) @ {avg_buy_price:.3f}€/kWh | '
               f'Sell: {total_selling_time:.1f}h ({total_energy_sold:.0f}kWh) @ {avg_sell_price:.3f}€/kWh')
     # Add legend entries for coloring (BESS↔Grid only)
     from matplotlib.patches import Patch
     legend_handles = [
-        Patch(facecolor='green', alpha=0.1, label='BESS buying from Grid'),
-        Patch(facecolor='red', alpha=0.1, label='BESS selling to Grid')
+        Patch(facecolor='green', alpha=0.1, label='Buying from Grid (total)'),
+        Patch(facecolor='red', alpha=0.1, label='Selling to Grid (total)')
     ]
     price_lines = plt.legend(loc='upper right', fontsize=9)
     plt.gca().add_artist(price_lines)
@@ -158,25 +161,8 @@ def plot_financials(revenues, data, save_dir=None):
     plt.xticks(x_ticks, x_labels)
     for d in range(1, len(x_ticks)):
         plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
-    # Subplot 2: Revenue and Cost Streams (use new separated terms)
-    plt.subplot(3, 1, 2)
-    plt.plot(data['time_steps'], revenues.get('pv_to_grid_rev', np.zeros_like(data['time_steps'])), label='PV to Grid Revenue (Euro/step)', color='darkorange', linewidth=1)
-    plt.plot(data['time_steps'], -revenues.get('grid_buy_cost', np.zeros_like(data['time_steps'])), label='Grid Buy Cost (Euro/step)', color='blue', linewidth=1, linestyle='--')
-    plt.plot(data['time_steps'], revenues.get('bess_to_grid_rev', np.zeros_like(data['time_steps'])), label='BESS to Grid Revenue (Euro/step)', color='black', linewidth=1)
-    plt.plot(data['time_steps'], revenues.get('pv_to_ev_rev', np.zeros_like(data['time_steps'])), label='PV to EV Revenue (Euro/step)', color='red', linewidth=1)
-    plt.plot(data['time_steps'], revenues.get('bess_to_ev_rev', np.zeros_like(data['time_steps'])), label='BESS to EV Revenue (Euro/step)', color='green', linewidth=1)
-    plt.plot(data['time_steps'], -revenues.get('bess_grid_charging_cost', np.zeros_like(data['time_steps'])), label='BESS Grid Charging Cost (Euro/step)', color='purple', linewidth=1, linestyle='--')
-    plt.plot(data['time_steps'], -revenues.get('bess_efficiency_loss_cost', np.zeros_like(data['time_steps'])), label='BESS Efficiency Loss Cost (Euro/step)', color='brown', linewidth=1, linestyle='--')
-    plt.xlabel('Time (h)')
-    plt.ylabel('Euro/step')
-    plt.title('Revenue and Cost Streams')
-    plt.legend(loc='upper right', fontsize=8, ncol=2, bbox_to_anchor=(1.0, 1.0))
-    plt.grid(True, linestyle=':', linewidth=0.7)
-    plt.xticks(x_ticks, x_labels)
-    for d in range(1, len(x_ticks)):
-        plt.axvline(x_ticks[d], color='gray', linestyle='--', linewidth=0.7)
-    # Subplot 3: Total and Cumulative Revenue
-    plt.subplot(3, 1, 3)
+    # Subplot 2: Total and Cumulative Cashflow
+    plt.subplot(2, 1, 2)
     ax1 = plt.gca()
     ax1.plot(data['time_steps'], revenues.get('total_net_per_step', np.zeros_like(data['time_steps'])), label='Total Revenue per Step (Euro)', color='purple', linewidth=1)
     ax1.set_xlabel('Time (h)')
@@ -193,8 +179,8 @@ def plot_financials(revenues, data, save_dir=None):
     ax2.plot(data['time_steps'], cumulative_revenue, label='Cumulative Total Revenue (Euro)', color='orange', linestyle='--', linewidth=1)
     ax2.set_ylabel('Cumulative Revenue (Euro)')
     ax2.legend(loc='upper right', fontsize=9)
-    plt.subplots_adjust(hspace=0.35, top=0.95, bottom=0.06, left=0.07, right=0.97)
-    plt.tight_layout(pad=1.5)
+    plt.subplots_adjust(hspace=0.3, top=0.95, bottom=0.08, left=0.07, right=0.97)
+    plt.tight_layout(pad=0.8)
     # Save plot - honor provided save_dir if given, otherwise default to Output Files
     if save_dir is None:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -206,3 +192,33 @@ def plot_financials(revenues, data, save_dir=None):
     print(f"Saving financials plot to: {save_path}")
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close()
+
+    # Triad cashflow bars (separate figure): Grid Sell, Grid Buy, EV Revenue
+    sell_total = float(revenues.get('total_grid_sell_revenue', 0.0))
+    buy_total = -float(revenues.get('total_grid_buy_cost', 0.0))  # negative for cost
+    ev_total = float(revenues.get('total_ev_rev', 0.0))
+    plt.figure(figsize=(8, 5))
+    labels = ['Grid Sell', 'Grid Buy', 'EV Revenue']
+    values = [sell_total, buy_total, ev_total]
+    colors = ['lightblue', 'salmon', 'green']
+    plt.bar(labels, values, color=colors)
+    plt.axhline(0, color='black', linewidth=0.8)
+    plt.ylabel('Euro (Total over period)')
+    net = sell_total + buy_total + ev_total
+    plt.title(f'Cashflow Components (sum = {net:.2f} €)')
+    contrib_path = os.path.join(save_dir, f'Financials_Triad{suffix}.png')
+    plt.savefig(contrib_path, dpi=200, bbox_inches='tight')
+    plt.close()
+    # Contributions bar plot (separate figure): PV, BESS, EV, Grid
+    contrib = revenues.get('asset_totals', {})
+    if contrib:
+        plt.figure(figsize=(8, 5))
+        labels = ['PV', 'BESS', 'EV', 'Grid']
+        values = [contrib.get('PV', 0.0), contrib.get('BESS', 0.0), contrib.get('EV', 0.0), contrib.get('Grid', 0.0)]
+        colors = ['darkorange', 'black', 'green', 'blue']
+        plt.bar(labels, values, color=colors)
+        plt.ylabel('Euro (Total over period)')
+        plt.title('Cash-Effective Contributions by Asset')
+        contrib_path = os.path.join(save_dir, f'Financials_Contributions{suffix}.png')
+        plt.savefig(contrib_path, dpi=200, bbox_inches='tight')
+        plt.close()

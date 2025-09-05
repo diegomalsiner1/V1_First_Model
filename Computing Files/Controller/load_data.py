@@ -48,10 +48,27 @@ def fetch_prices(start_dt, end_dt, price_source="HPFC", base_forecast=100.0, pea
         grid_buy_price_raw, grid_sell_price_raw = HPFC_prices_forecast.fetch_prices_from_csv(
             start_dt, end_dt, base_forecast, peak_forecast, normalisation=normalisation
         )
-    else: 
+    else:
         grid_buy_price_raw = Prices_ITA.fetch_prices_from_csv(start_dt, end_dt)
         grid_sell_price_raw = grid_buy_price_raw - 0.01
-    
+
+    # Enforce a configurable buy/sell spread to ensure realism across sources
+    constants_data = load_constants()
+    try:
+        spread_kwh = float(constants_data.get('MARKET_SPREAD_EUR_PER_KWH', 0.0035))
+    except Exception:
+        spread_kwh = 0.0035
+
+    # Override sell series to maintain the desired spread from buy prices
+    try:
+        import numpy as _np
+        buy_arr = _np.array(grid_buy_price_raw, dtype=float)
+        grid_sell_price_raw = buy_arr - spread_kwh
+        # prevent negative sell prices
+        grid_sell_price_raw = _np.maximum(grid_sell_price_raw, 0.0)
+    except Exception:
+        pass
+
     if len(grid_buy_price_raw) != 168:
         raise ValueError(f"Expected 168 hourly prices, got {len(grid_buy_price_raw)}.")
     return grid_buy_price_raw, grid_sell_price_raw

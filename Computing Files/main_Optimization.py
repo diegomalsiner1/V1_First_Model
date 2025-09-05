@@ -278,6 +278,10 @@ data['bess_grid_export_vals'] = results.get('P_BESS_grid_vals', np.zeros_like(P_
 days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 data['day_labels'] = [days[(data['start_weekday'] + d) % 7] for d in range(7)]
 
+# Provide total grid import/export to plotting for coloring
+data['total_grid_import_vals'] = results.get('P_grid_bought', P_grid_import_vals)
+data['total_grid_export_vals'] = results.get('P_grid_sold', P_grid_export_vals)
+
 # Generate plots for energy flows and financials
 plots.plot_energy_flows(results, data, revenues, save_dir=output_dir)
 plots.plot_financials(revenues, data, save_dir=output_dir)
